@@ -120,9 +120,16 @@ async function runGeneration(draftId: string): Promise<void> {
 
     // 以最终全文为准：契约解析成终稿段落（§5.7 ②），再置 ready
     const finalSegments = await finalizeDraftContent(repos, draft, result.text);
+    // 系统级取消复查（M3）：生成期间草稿被归档/截断统一 discard 时静默终止，
+    // 不覆写 content、不迁状态
+    const current = await repos.drafts.get(draftId);
+    if (current?.status === 'discarded') return;
     await repos.drafts.updateContent(draftId, finalSegments);
     await transitionDraft(repos, draftId, 'ready');
   } catch (err) {
+    // 系统级取消复查（M3）：生成期间被 discard 时静默终止，不再置 failed
+    const current = await repos.drafts.get(draftId).catch(() => null);
+    if (current?.status === 'discarded') return;
     // OpenAICompatibleError：statusCode + message 一并落 error 字段，供导演排查
     const error =
       err instanceof OpenAICompatibleError

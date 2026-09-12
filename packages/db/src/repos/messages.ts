@@ -1,6 +1,6 @@
 // MessageRepo 的 Drizzle 实现（§2.3 第一级粗筛走 SQL，§5.6 seq 事务约定）。
 
-import { and, desc, eq, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, lte, sql } from 'drizzle-orm';
 
 import type { MessageRepo, NewMessage, VisibleMessagesQuery } from '@kur-river/core';
 import { renderedText, type Message, type SenderType } from '@kur-river/core';
@@ -124,6 +124,25 @@ export function createMessageRepo(db: Database): MessageRepo {
             ...(opts?.upToSeq !== undefined ? [lte(messages.seq, opts.upToSeq)] : []),
           ),
         )
+        .returning({ id: messages.id });
+      return rows.length;
+    },
+
+    // §7.1 M3 消息编辑：整体替换段落；visibleTo 快照不变
+    async update(id, patch) {
+      const [row] = await db
+        .update(messages)
+        .set({ content: patch.content })
+        .where(eq(messages.id, id))
+        .returning();
+      return row ? toMessage(row) : null;
+    },
+
+    // §7.1 M3 截断重演：删除 seq 之后的全部消息
+    async truncateAfter(sessionId, seq) {
+      const rows = await db
+        .delete(messages)
+        .where(and(eq(messages.sessionId, sessionId), gt(messages.seq, seq)))
         .returning({ id: messages.id });
       return rows.length;
     },

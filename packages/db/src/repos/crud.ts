@@ -73,7 +73,10 @@ const toLorebookEntry = (row: typeof lorebookEntries.$inferSelect): LorebookEntr
   visibility: row.visibility as LorebookVisibility,
   position: row.position as LorebookPosition,
 });
-const toMemory = (row: typeof memories.$inferSelect): MemoryRecord => row;
+const toMemory = (row: typeof memories.$inferSelect): MemoryRecord => ({
+  ...row,
+  kind: row.kind as MemoryRecord['kind'],
+});
 const toLlmConnection = (row: typeof llmConnections.$inferSelect): LlmConnection => ({
   id: row.id,
   name: row.name,
@@ -420,17 +423,76 @@ export function createLorebookEntryRepo(db: Database): LorebookEntryRepo {
 
 export function createMemoryRepo(db: Database): MemoryRepo {
   return {
+    // §2.2"按场次时间顺序"：按**场次的创建时间**排序（不是记录时间）——
+    // 归档后修订重算会使记录 createdAt 跳到现在，但记忆仍属于旧场次（epoch 覆盖语义依赖场次时序）
     async list(characterId, troupeId) {
       const rows = await db
-        .select()
+        .select({ m: memories })
         .from(memories)
+        .leftJoin(sessions, eq(memories.sessionId, sessions.id))
         .where(and(eq(memories.characterId, characterId), eq(memories.troupeId, troupeId)))
-        .orderBy(asc(memories.createdAt));
-      return rows.map(toMemory);
+        .orderBy(asc(sessions.createdAt), asc(memories.createdAt));
+      return rows.map((r) => toMemory(r.m));
     },
     async append(input: NewMemory) {
-      const [row] = await db.insert(memories).values(input).returning();
+      const [row] = await db
+        .insert(memories)
+        .values({
+          characterId: input.characterId,
+          troupeId: input.troupeId,
+          sessionId: input.sessionId,
+          kind: input.kind ?? 'session',
+          coversCount: input.coversCount ?? null,
+          summary: input.summary,
+        })
+        .returning();
       return toMemory(row);
+    },
+    async getEpoch(characterId, troupeId) {
+      const [row] = await db
+        .select()
+        .from(memories)
+        .where(
+          and(
+            eq(memories.characterId, characterId),
+            eq(memories.troupeId, troupeId),
+            eq(memories.kind, 'epoch'),
+          ),
+        )
+        .limit(1);
+      return row ? toMemory(row) : null;
+    },
+    // epoch 只是读取优化（§2.2 v0.4）：upsert 不触碰原始 session 记录
+    async upsertEpoch(input) {
+      const existing = await this.getEpoch(input.characterId, input.troupeId);
+      if (existing) {
+        const [row] = await db
+          .update(memories)
+          .set({ summary: input.summary, coversCount: input.coversCount, sessionId: input.sessionId })
+          .where(eq(memories.id, existing.id))
+          .returning();
+        return toMemory(row);
+      }
+      const [row] = await db
+        .insert(memories)
+        .values({
+          characterId: input.characterId,
+          troupeId: input.troupeId,
+          sessionId: input.sessionId,
+          kind: 'epoch',
+          coversCount: input.coversCount,
+          summary: input.summary,
+        })
+        .returning();
+      return toMemory(row);
+    },
+    // 已归档场次消息变更 → 作废该场全部摘要（§2.2 重算前置）
+    async deleteBySession(sessionId) {
+      const rows = await db
+        .delete(memories)
+        .where(eq(memories.sessionId, sessionId))
+        .returning({ id: memories.id });
+      return rows.length;
     },
   };
 }

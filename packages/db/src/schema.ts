@@ -209,7 +209,10 @@ export const lorebookEntries = pgTable(
   (t) => [index('lorebook_entries_owner_idx').on(t.ownerType, t.ownerId)],
 );
 
-// 记忆摘要：每场一条追加；聚合与滚动合并（epoch）见 §2.2 Memory
+// 记忆摘要：每场一条追加；聚合与滚动合并（epoch）见 §2.2 Memory。
+// kind：session = 单场摘要；epoch = "摘要的摘要"（读取优化，不删原始记录，
+// 可由覆盖的 session 记录重建）。epoch 行每 (character, troupe) 至多一条，
+// session_id 冗余存合并触发时的最新场次（外键 NOT NULL 的权宜）。
 export const memories = pgTable('memories', {
   id: uuid('id').primaryKey().defaultRandom(),
   characterId: uuid('character_id')
@@ -221,6 +224,10 @@ export const memories = pgTable('memories', {
   sessionId: uuid('session_id')
     .notNull()
     .references(() => sessions.id, { onDelete: 'cascade' }),
+  // 'session'（默认）| 'epoch'
+  kind: text('kind').notNull().default('session'),
+  // 仅 epoch：该行合并了多少条最旧的 session 摘要（读取时跳过前 N 条原始记录）
+  coversCount: integer('covers_count'),
   summary: text('summary').notNull(),
   createdAt: createdAt(),
 });

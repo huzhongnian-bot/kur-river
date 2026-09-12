@@ -10,6 +10,7 @@ import type { ChatMessage, TokenCounter } from '@kur-river/llm';
 import { substituteMacros } from '../card/index';
 import { renderCharacterCard, cardText } from '../card/index';
 import { scanLorebook, activatedContents, type LorebookScanResult } from '../lorebook/index';
+import { buildMemoryLayer } from '../memory/index';
 import type { LorebookScope, Repos } from '../repos/index';
 import type { Character, LorebookEntry, Message, Persona } from '../types';
 import { messagePublicText, renderMessageForReader } from '../visibility/index';
@@ -58,6 +59,9 @@ export interface BudgetAllocation {
   outputReserve: number;
   /** 世界书预算：system 区的一半（设计未指定份额，M1 取 1/2，可经 ratios 调整） */
   lorebook: number;
+  /** 长期记忆预算（§5.2 ④）：与 lorebook 并列的 system 区子预算，
+   *  M3 取 system 的 1/4（卡片/基调保底不动，记忆不足时从旧截断） */
+  memory: number;
 }
 
 export function allocateBudget(
@@ -69,7 +73,14 @@ export function allocateBudget(
   const history = Math.floor(total * ratios.history);
   // 输出保留吃掉舍入误差，确保三区之和 == maxContext
   const outputReserve = Math.max(0, total - system - history);
-  return { maxContext: total, system, history, outputReserve, lorebook: Math.floor(system / 2) };
+  return {
+    maxContext: total,
+    system,
+    history,
+    outputReserve,
+    lorebook: Math.floor(system / 2),
+    memory: Math.floor(system / 4),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -242,8 +253,13 @@ export function createContextAssembler(deps: ContextAssemblerDeps): ContextAssem
 
     // ③ 角色卡层（本人：含 secrets）+ after_char 条目 + ④ memory + 输出契约
     const charDef = renderCharacterCard(char, { includeSecrets: true });
-    const memories = await repos.memories.list(char.id, troupe.id);
-    const memoryText = joinParts(memories.map((m) => m.summary));
+    // ④ 长期记忆层（§5.2）：本角色 × 本团队摘要，预算内最近优先（core/memory）
+    const memoryText = buildMemoryLayer({
+      records: await repos.memories.list(char.id, troupe.id),
+      budgetTokens: budget.memory,
+      tokenCounter,
+      model,
+    }).text;
     const system2 = substituteMacros(
       joinParts([
         charDef,

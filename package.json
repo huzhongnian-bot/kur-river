@@ -8,6 +8,7 @@
     "test": "pnpm -r test",
     "test:e2e": "node scripts/m1-e2e.mjs",
     "test:e2e:m2": "node scripts/m2-e2e.mjs",
+    "test:e2e:m3": "node scripts/m3-e2e.mjs",
     "test:smoke": "playwright test",
     "db:dev": "node scripts/dev-db.mjs",
     "db:generate": "pnpm --filter @kur-river/db generate",

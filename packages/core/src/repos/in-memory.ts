@@ -123,6 +123,22 @@ export function createInMemoryRepos(): Repos {
       }
       return count;
     },
+    async update(id, patch) {
+      const m = messages.get(id);
+      if (!m) return null;
+      m.content = patch.content;
+      return m;
+    },
+    async truncateAfter(sessionId, seq) {
+      let count = 0;
+      for (const [mid, m] of messages) {
+        if (m.sessionId === sessionId && m.seq > seq) {
+          messages.delete(mid);
+          count++;
+        }
+      }
+      return count;
+    },
   };
 
   const draftRepo: DraftRepo = {
@@ -242,15 +258,68 @@ export function createInMemoryRepos(): Repos {
   };
 
   const memoryRepo: MemoryRepo = {
+    // 按场次时间排序（§2.2；重算的记录 createdAt 会跳到现在，但记忆属于旧场次）
     async list(characterId, troupeId) {
+      const sessionTime = (sessionId: string) =>
+        sessions.get(sessionId)?.createdAt.getTime() ?? Number.MAX_SAFE_INTEGER;
       return [...memories.values()]
         .filter((m) => m.characterId === characterId && m.troupeId === troupeId)
-        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+        .sort(
+          (a, b) =>
+            sessionTime(a.sessionId) - sessionTime(b.sessionId) ||
+            a.createdAt.getTime() - b.createdAt.getTime(),
+        );
     },
     async append(input: NewMemory) {
-      const record: MemoryRecord = { id: crypto.randomUUID(), ...input, createdAt: now() };
+      const record: MemoryRecord = {
+        id: crypto.randomUUID(),
+        ...input,
+        kind: input.kind ?? 'session',
+        coversCount: input.coversCount ?? null,
+        createdAt: now(),
+      };
       memories.set(record.id, record);
       return record;
+    },
+    async getEpoch(characterId, troupeId) {
+      return (
+        [...memories.values()].find(
+          (m) => m.characterId === characterId && m.troupeId === troupeId && m.kind === 'epoch',
+        ) ?? null
+      );
+    },
+    async upsertEpoch(input) {
+      const existing = [...memories.values()].find(
+        (m) => m.characterId === input.characterId && m.troupeId === input.troupeId && m.kind === 'epoch',
+      );
+      if (existing) {
+        existing.summary = input.summary;
+        existing.coversCount = input.coversCount;
+        existing.sessionId = input.sessionId;
+        return existing;
+      }
+      const record: MemoryRecord = {
+        id: crypto.randomUUID(),
+        characterId: input.characterId,
+        troupeId: input.troupeId,
+        sessionId: input.sessionId,
+        kind: 'epoch',
+        coversCount: input.coversCount,
+        summary: input.summary,
+        createdAt: now(),
+      };
+      memories.set(record.id, record);
+      return record;
+    },
+    async deleteBySession(sessionId) {
+      let count = 0;
+      for (const [mid, m] of memories) {
+        if (m.sessionId === sessionId) {
+          memories.delete(mid);
+          count++;
+        }
+      }
+      return count;
     },
   };
 

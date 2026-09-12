@@ -128,6 +128,10 @@ export interface NewMemory {
   characterId: string;
   troupeId: string;
   sessionId: string;
+  /** 默认 'session'；epoch 行语义见 types.ts MemoryRecord */
+  kind?: 'session' | 'epoch';
+  /** 仅 epoch：合并了多少条最旧的 session 摘要 */
+  coversCount?: number | null;
   summary: string;
 }
 
@@ -235,6 +239,10 @@ export interface MessageRepo {
     characterId: string,
     opts?: { upToSeq?: number },
   ): Promise<number>;
+  /** 编辑已落盘消息（§7.1 M3）：整体替换段落内容；可见性快照不变 */
+  update(id: string, patch: { content: MessageSegment[] }): Promise<Message | null>;
+  /** 截断重演（§7.1 M3）：删除场次内 seq 大于指定值的全部消息，返回删除条数 */
+  truncateAfter(sessionId: string, seq: number): Promise<number>;
 }
 
 export interface DraftRepo {
@@ -270,9 +278,16 @@ export interface LorebookEntryRepo {
 }
 
 export interface MemoryRepo {
-  /** 本角色 × 本团队的全部摘要，按场次时间升序（§2.2 Memory；M3 才有数据） */
+  /** 本角色 × 本团队的全部记录（session + epoch），按**场次时间**升序（§2.2
+   *  "按场次时间顺序拼接"；重算的记录 createdAt 跳到现在，但记忆仍属旧场次） */
   list(characterId: string, troupeId: string): Promise<MemoryRecord[]>;
   append(input: NewMemory): Promise<MemoryRecord>;
+  /** 本角色 × 本团队的 epoch 记录（至多一条，读取优化，§2.2） */
+  getEpoch(characterId: string, troupeId: string): Promise<MemoryRecord | null>;
+  /** 有则更新、无则插入 epoch（不删原始 session 记录，§2.2 v0.4） */
+  upsertEpoch(input: NewMemory & { kind: 'epoch'; coversCount: number }): Promise<MemoryRecord>;
+  /** 已归档场次消息变更时作废该场全部摘要（§2.2 重算前置，返回删除条数） */
+  deleteBySession(sessionId: string): Promise<number>;
 }
 
 export interface LlmConnectionRepo {

@@ -183,12 +183,18 @@ export interface LorebookEntry {
   enabled: boolean;
 }
 
-/** 记忆摘要：每场一条追加（§2.2 Memory，M3 才有数据） */
+/** 记忆摘要记录的种类（§2.2 Memory）：session = 单场摘要；epoch = 摘要的摘要（读取优化） */
+export type MemoryKind = 'session' | 'epoch';
+
+/** 记忆摘要：每场一条追加（§2.2 Memory）；epoch 可由覆盖的 session 记录重建 */
 export interface MemoryRecord {
   id: string;
   characterId: string;
   troupeId: string;
   sessionId: string;
+  kind: MemoryKind;
+  /** 仅 epoch：合并了多少条最旧的 session 摘要（读取时跳过前 N 条原始记录） */
+  coversCount: number | null;
   summary: string;
   createdAt: Date;
 }

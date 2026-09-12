@@ -12,7 +12,9 @@ import type { Draft, DraftStatus, Message, MessageSegment } from '../types';
 
 export const DRAFT_TRANSITIONS: Readonly<Record<DraftStatus, readonly DraftStatus[]>> = {
   queued: ['generating', 'discarded'],
-  generating: ['ready', 'failed'],
+  // generating → discarded：系统级取消（场次归档/截断重演清悬挂草稿，M3）；
+  // 进行中的生成任务落地前会复查状态并静默终止（server/generation.ts）
+  generating: ['ready', 'failed', 'discarded'],
   ready: ['confirmed', 'discarded'],
   failed: [],
   confirmed: [],

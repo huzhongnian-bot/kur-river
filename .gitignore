@@ -1,0 +1,11 @@
+node_modules/
+.next/
+dist/
+.env.local
+.env
+*.log
+*.tsbuildinfo
+.pgdata/
+.pgdata-*/
+test-results/
+playwright-report/

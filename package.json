@@ -1,0 +1,20 @@
+{
+  "name": "kur-river",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @kur-river/web dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "test:e2e": "node scripts/m1-e2e.mjs",
+    "test:smoke": "playwright test",
+    "db:dev": "node scripts/dev-db.mjs",
+    "db:generate": "pnpm --filter @kur-river/db generate",
+    "db:migrate": "pnpm --filter @kur-river/db migrate"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "embedded-postgres": "17.7.0-beta.15",
+    "vitest": "^5.0.0"
+  }
+}

@@ -1,0 +1,11 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# embedded-postgres 需要 post-install 脚本生成 Postgres 运行所需的符号链接
+# （Windows 二进制在 @embedded-postgres/windows-x64）；
+# esbuild（drizzle-kit/tsx 依赖）需要 post-install 放置平台二进制
+allowBuilds:
+  embedded-postgres: true
+  '@embedded-postgres/windows-x64': true
+  esbuild: true

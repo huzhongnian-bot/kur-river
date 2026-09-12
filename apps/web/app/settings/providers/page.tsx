@@ -139,7 +139,7 @@ export default function ProvidersSettingsPage() {
       <div className="space-y-4">
         <section className={cardCls}>
           <h2 className="mb-3 font-semibold">连接（openai-compatible）</h2>
-          <div className="mb-4 grid grid-cols-2 gap-2 rounded bg-gray-50 p-3">
+          <div className="mb-4 grid grid-cols-1 gap-2 rounded bg-gray-50 p-3 md:grid-cols-2">
             <div>
               <label className={labelCls}>名称 *</label>
               <input
@@ -270,7 +270,7 @@ export default function ProvidersSettingsPage() {
 
         <section className={cardCls}>
           <h2 className="mb-3 font-semibold">采样参数预设</h2>
-          <div className="mb-4 grid grid-cols-2 gap-2 rounded bg-gray-50 p-3">
+          <div className="mb-4 grid grid-cols-1 gap-2 rounded bg-gray-50 p-3 md:grid-cols-2">
             <div>
               <label className={labelCls}>预设名 *</label>
               <input
@@ -337,7 +337,7 @@ export default function ProvidersSettingsPage() {
 
         <section className={cardCls}>
           <h2 className="mb-3 font-semibold">全局默认（优先级链最底层）</h2>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
             <div>
               <label className={labelCls}>默认连接</label>
               <select

@@ -178,7 +178,7 @@ function CharactersSection({
       </div>
       {showForm && (
         <div className="mb-4 space-y-2 rounded bg-gray-50 p-3">
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
             <div>
               <label className={labelCls}>角色名 *</label>
               <input className={inputCls} value={form.name} onChange={set('name')} />
@@ -476,7 +476,7 @@ function LorebookSection({
       </div>
       {showForm && (
         <div className="mb-4 space-y-2 rounded bg-gray-50 p-3">
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
             <div>
               <label className={labelCls}>scope</label>
               <select
@@ -556,7 +556,7 @@ function LorebookSection({
               />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
             <div>
               <label className={labelCls}>keys（逗号分隔）</label>
               <input

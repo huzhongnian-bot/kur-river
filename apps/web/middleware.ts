@@ -4,7 +4,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export const config = {
-  matcher: ['/((?!api/health|_next/static|_next/image|favicon.ico).*)'],
+  // 公开资源不过门：健康检查 + PWA（manifest/图标不含敏感数据，安装流程需可匿名获取）
+  matcher: ['/((?!api/health|manifest.webmanifest|icon.svg|icons/|_next/static|_next/image|favicon.ico).*)'],
 };
 
 export default function middleware(req: NextRequest) {

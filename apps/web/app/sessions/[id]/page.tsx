@@ -136,6 +136,10 @@ export default function SessionStagePage() {
   // 视角切换（信息不对称演示）：'director' = 全部段落；否则按该角色过滤（§2.3 第二级）
   const [viewAs, setViewAs] = useState<string>('director');
 
+  // 移动端抽屉（M4 §7.2）：左右栏在 <md 收进抽屉；底部固定输入栏见底部
+  const [leftDrawer, setLeftDrawer] = useState(false);
+  const [rightDrawer, setRightDrawer] = useState(false);
+
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const nameOf = useCallback(
@@ -366,10 +370,50 @@ export default function SessionStagePage() {
           {notice}
         </div>
       )}
-      <div className="grid grid-cols-[180px_1fr_300px] gap-4">
-        {/* 左栏：在场名单（上下场/点名 + 补发可见性，§2.2） */}
-        <aside className="space-y-2">
-          <h2 className="text-sm font-semibold text-gray-600">在场角色</h2>
+      {/* 移动端顶栏（M4）：左右抽屉开关；PC 不显示 */}
+      <div className="mb-2 flex items-center gap-2 md:hidden">
+        <button
+          className={`${btnGhostCls} flex-1`}
+          onClick={() => {
+            setLeftDrawer(true);
+            setRightDrawer(false);
+          }}
+        >
+          ☰ 在场角色
+        </button>
+        <button
+          className={`${btnGhostCls} flex-1`}
+          onClick={() => {
+            setRightDrawer(true);
+            setLeftDrawer(false);
+          }}
+        >
+          导演面板 ☰
+        </button>
+      </div>
+      {/* 抽屉背板（仅移动端） */}
+      {(leftDrawer || rightDrawer) && (
+        <div
+          className="fixed inset-0 z-30 bg-black/30 md:hidden"
+          onClick={() => {
+            setLeftDrawer(false);
+            setRightDrawer(false);
+          }}
+        />
+      )}
+      <div className="pb-32 md:grid md:grid-cols-[180px_1fr_300px] md:gap-4 md:pb-0">
+        {/* 左栏：在场名单（上下场/点名 + 补发可见性，§2.2）；移动端左抽屉 */}
+        <aside
+          className={`fixed inset-y-0 left-0 z-40 w-64 space-y-2 overflow-y-auto bg-white p-3 shadow-xl transition-transform md:visible md:static md:z-auto md:w-auto md:translate-x-0 md:overflow-visible md:bg-transparent md:p-0 md:shadow-none md:transition-none ${
+            leftDrawer ? 'visible translate-x-0' : 'invisible -translate-x-full'
+          }`}
+        >
+          <div className="mb-1 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-600">在场角色</h2>
+            <button className={`${btnGhostCls} md:hidden`} onClick={() => setLeftDrawer(false)}>
+              收起
+            </button>
+          </div>
           {castCharacters.map((c) => (
             <div key={c.id} className="space-y-1">
               <button
@@ -378,7 +422,10 @@ export default function SessionStagePage() {
                     ? 'border-blue-500 bg-blue-50 font-medium'
                     : 'border-gray-200 hover:bg-gray-50'
                 }`}
-                onClick={() => setSpeakerId(c.id)}
+                onClick={() => {
+                  setSpeakerId(c.id);
+                  setLeftDrawer(false); // 移动端点名后收抽屉（PC 为 no-op 态）
+                }}
               >
                 {c.name}
                 {speakerId === c.id && <span className="ml-1 text-xs text-blue-500">◀ 点名</span>}
@@ -586,8 +633,17 @@ export default function SessionStagePage() {
           )}
         </section>
 
-        {/* 右栏：导演面板 */}
-        <aside className="space-y-4">
+        {/* 右栏：导演面板；移动端右抽屉 */}
+        <aside
+          className={`fixed inset-y-0 right-0 z-40 w-72 space-y-4 overflow-y-auto bg-white p-3 shadow-xl transition-transform md:visible md:static md:z-auto md:w-auto md:translate-x-0 md:overflow-visible md:bg-transparent md:p-0 md:shadow-none md:transition-none ${
+            rightDrawer ? 'visible translate-x-0' : 'invisible translate-x-full'
+          }`}
+        >
+          <div className="mb-1 flex items-center justify-end md:hidden">
+            <button className={btnGhostCls} onClick={() => setRightDrawer(false)}>
+              收起
+            </button>
+          </div>
           <div className="rounded border border-gray-200 bg-white p-3 shadow-sm">
             <h2 className="mb-2 text-sm font-semibold text-gray-600">导演指令</h2>
             <textarea
@@ -730,6 +786,39 @@ export default function SessionStagePage() {
             </button>
           </div>
         </aside>
+      </div>
+
+      {/* 移动端底部固定输入栏（M4 §7.2：指令输入 + 发言角色 + 生成入口）。
+          注意：inputCls 自带 w-full，flex 行内会把按钮挤出视口，这里用无 w-full 的局部类 */}
+      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-gray-200 bg-white p-2 md:hidden">
+        <div className="flex items-end gap-2">
+          <select
+            className="w-24 flex-none rounded border border-gray-300 px-2 py-1 text-base focus:border-blue-500 focus:outline-none"
+            value={speakerId}
+            onChange={(e) => setSpeakerId(e.target.value)}
+            title="发言角色"
+          >
+            {castCharacters.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <textarea
+            className="min-w-0 flex-1 rounded border border-gray-300 px-2 py-1 text-base focus:border-blue-500 focus:outline-none"
+            rows={2}
+            placeholder="导演指令（留空 = 自发反应）"
+            value={directive}
+            onChange={(e) => setDirective(e.target.value)}
+          />
+          <button
+            className={`${btnCls} flex-none`}
+            disabled={busy || !speakerId || castCharacters.length === 0}
+            onClick={() => void generate()}
+          >
+            生成
+          </button>
+        </div>
       </div>
     </PageShell>
   );

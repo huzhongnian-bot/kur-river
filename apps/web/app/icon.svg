@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#0f172a"/>
+  <g transform="rotate(-6 256 150)">
+    <rect x="86" y="118" width="340" height="66" rx="12" fill="#f59e0b"/>
+    <g fill="#0f172a">
+      <rect x="118" y="112" width="34" height="78" transform="skewX(-18)"/>
+      <rect x="196" y="112" width="34" height="78" transform="skewX(-18)"/>
+      <rect x="274" y="112" width="34" height="78" transform="skewX(-18)"/>
+      <rect x="352" y="112" width="34" height="78" transform="skewX(-18)"/>
+    </g>
+  </g>
+  <rect x="86" y="196" width="340" height="200" rx="16" fill="#f8fafc"/>
+  <text x="256" y="332" font-size="128" text-anchor="middle" fill="#0f172a" font-family="'PingFang SC','Microsoft YaHei',sans-serif" font-weight="bold">戏</text>
+</svg>

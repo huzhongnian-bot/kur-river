@@ -221,7 +221,7 @@ export default function TroupeDetailPage() {
         <section className={cardCls}>
           <h2 className="mb-3 font-semibold">场次（{sessions.length}）</h2>
           <div className="mb-3 space-y-2 rounded bg-gray-50 p-3">
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
               <input
                 className={inputCls}
                 placeholder="场次标题（可空）"

@@ -129,6 +129,9 @@ export function createInMemoryRepos(): Repos {
       m.content = patch.content;
       return m;
     },
+    async remove(id) {
+      return messages.delete(id);
+    },
     async truncateAfter(sessionId, seq) {
       let count = 0;
       for (const [mid, m] of messages) {
@@ -432,6 +435,7 @@ export function createInMemoryRepos(): Repos {
           name: input.name,
           outline: input.outline ?? null,
           toneDirective: input.toneDirective ?? null,
+          skin: input.skin ?? 'modern',
           defaultPersonaId: input.defaultPersonaId ?? null,
           llmConnectionId: input.llmConnectionId ?? null,
           model: input.model ?? null,

@@ -4,20 +4,33 @@
 
 ## 开发环境上手（M0）
 
-前置：Node.js ≥ 22、pnpm（`npm i -g pnpm`）。不需要 Docker / 本地 Postgres。
+前置：Node.js ≥ 22、pnpm（`npm i -g pnpm`）、本机 PostgreSQL（EDB 安装包，
+以 Windows 服务常驻、开机自启，无需手动启动数据库）。
+
+### 首次配置（一次性）
 
 ```bash
-pnpm install        # 安装依赖（内嵌 Postgres 二进制随依赖安装）
+pnpm install
 
-# 终端 1：启动开发数据库（内嵌 Postgres，端口 54329，数据在 .pgdata/，
-# 首次运行会初始化数据目录；自动把 DATABASE_URL 写入根目录 .env）
-pnpm db:dev
+# 1. 建库（Windows 下 psql 位于 "C:\Program Files\PostgreSQL\18\bin\psql.exe"）
+psql -U postgres -h localhost -c "CREATE DATABASE kurriver;"
 
-# 终端 2：应用数据库迁移，启动 web
-pnpm db:migrate     # 生成迁移用 pnpm db:generate（改 schema 后）
-pnpm dev            # http://localhost:3000
+# 2. 根目录新建 .env.local，写入连接串（模板见 apps/web/.env.example）
+#    DATABASE_URL=postgres://postgres@localhost:5432/kurriver
 
-# 可选：开启密码门（不设置则本地放行）
+# 3. 应用数据库迁移
+pnpm db:migrate     # 改了 schema 后用 pnpm db:generate 生成新迁移
+```
+
+### 日常启动
+
+```bash
+pnpm dev            # http://localhost:3000，就这一条
+```
+
+可选：开启密码门（不设置则本地放行）
+
+```bash
 APP_PASSWORD=你的密码 pnpm dev
 ```
 
@@ -37,7 +50,7 @@ Basic Auth 下走通 建世界 → 角色（含 first_mes）→ 化身 → 连�
 （流式内容断言与 mock 全文一致）→ confirm(seq 2) → 导演消息(seq 3)。
 
 ```bash
-# 前置：开发数据库在跑（pnpm db:dev 或等价 Postgres，DATABASE_URL 见根 .env.local）
+# 前置：DATABASE_URL 指向一个可用 Postgres（默认读根 .env.local）
 node scripts/e2e-m1.mjs
 ```
 
@@ -60,9 +73,9 @@ node scripts/e2e-m1.mjs
    活跃批次重复发起 409；cancel 清批次保留当前草稿
 
 ```bash
-# 前置：开发数据库在跑（pnpm db:dev 或等价 Postgres）
+# 前置：DATABASE_URL 指向一个可用 Postgres
 # 注意：DATABASE_URL 默认读根 .env.local——若它指向生产库，请显式覆盖，例如：
-DATABASE_URL=postgresql://postgres:postgres@localhost:54329/kur_river \
+DATABASE_URL=postgres://postgres@localhost:5432/kurriver \
   APP_PASSWORD=任意自洽密码 node scripts/e2e-m2.mjs
 ```
 
@@ -74,4 +87,3 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:54329/kur_river \
 - `packages/core` — 领域内核（纯 TS，零运行时依赖）
 - `packages/llm` — LLM Provider 适配层
 - `packages/db` — Drizzle schema + client + migrations
-- `scripts/dev-db.mjs` — 开发用内嵌 Postgres 启动脚本

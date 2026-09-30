@@ -28,23 +28,23 @@ export default async function Page() {
   return (
     <main className="mx-auto max-w-2xl p-8">
       <h1 className="text-2xl font-bold">kur-river · 导演制 AI 跑团平台</h1>
-      <p className={`mt-4 font-mono text-sm ${status.ok ? 'text-green-700' : 'text-red-600'}`}>
+      <p className={`mt-4 font-mono text-sm ${status.ok ? 'text-success' : 'text-destructive'}`}>
         {status.ok ? `DB OK / worlds: ${status.worlds}` : `DB 连接失败：${status.message}`}
       </p>
       <nav className="mt-8 space-y-3">
         <Link
           href="/worlds"
-          className="block rounded border border-gray-200 p-4 hover:border-blue-400 hover:bg-blue-50"
+          className="block rounded-xl border border-border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-accent"
         >
           <div className="font-semibold">世界书</div>
-          <div className="text-sm text-gray-500">条目管理 / 角色池 / 化身 / 演出团队</div>
+          <div className="text-sm text-muted-foreground">条目管理 / 角色池 / 化身 / 演出团队</div>
         </Link>
         <Link
           href="/settings/providers"
-          className="block rounded border border-gray-200 p-4 hover:border-blue-400 hover:bg-blue-50"
+          className="block rounded-xl border border-border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-accent"
         >
           <div className="font-semibold">LLM 设置</div>
-          <div className="text-sm text-gray-500">连接 / 预设 / 全局默认模型</div>
+          <div className="text-sm text-muted-foreground">连接 / 预设 / 全局默认模型</div>
         </Link>
       </nav>
     </main>

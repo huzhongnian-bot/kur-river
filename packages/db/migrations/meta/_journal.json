@@ -15,6 +15,13 @@
       "when": 1789228677920,
       "tag": "0001_windy_the_anarchist",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789799685949,
+      "tag": "0002_new_captain_universe",
+      "breakpoints": true
     }
   ]
 }

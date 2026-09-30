@@ -78,16 +78,16 @@ test('移动端演出界面：抽屉点名 → 底部栏生成 → 定密台确�
   const { session } = await seed();
   await page.goto(`${webBase}/sessions/${session.id}`);
 
-  // 布局断言：底部固定输入栏可见；桌面端侧栏内容（直接发言面板）默认不可见
+  // 布局断言：底部发言栏可见；桌面端右栏内容（生成控制面板）默认不可见
   const bottomBar = page.locator('div.fixed.bottom-0');
   await expect(bottomBar).toBeVisible();
-  await expect(bottomBar.getByPlaceholder(/导演指令/)).toBeVisible();
-  await expect(page.getByText('直接发言（落盘）')).toBeHidden();
+  await expect(bottomBar.getByPlaceholder(/提示词/)).toBeVisible();
+  await expect(page.getByText('生成控制')).toBeHidden();
 
   // 开场草稿（种子角色带 first_mes）：定密台在移动端完整可用
-  const draftCard = page.locator('div.border-amber-300');
+  const draftCard = page.getByTestId('draft-card');
   await expect(draftCard.getByText('草稿 · Alice')).toBeVisible();
-  await expect(draftCard.locator('textarea').first()).toHaveValue(/导演，开场/);
+  await expect(draftCard.getByText(/导演，开场/)).toBeVisible();
   await draftCard.getByRole('button', { name: '确认落盘' }).click();
   await expect(page.getByText('#1')).toBeVisible({ timeout: 10_000 });
 
@@ -99,13 +99,13 @@ test('移动端演出界面：抽屉点名 → 底部栏生成 → 定密台确�
   await expect(aliceBtn).toBeHidden();
   // 右侧导演面板抽屉也能开合
   await page.getByRole('button', { name: '导演面板 ☰' }).click();
-  await expect(page.getByText('直接发言（落盘）')).toBeVisible();
+  await expect(page.getByText('生成控制')).toBeVisible();
   await page.getByRole('button', { name: '收起' }).first().click();
 
-  // 底部输入栏：填指令 → 生成 → 草稿卡出 mock 全文 → 确认 → seq=2 上屏
-  await bottomBar.getByPlaceholder(/导演指令/).fill('向导演致意');
+  // 底部发言栏：填提示词 → AI 生成 → 草稿卡出 mock 全文 → 确认 → seq=2 上屏
+  await bottomBar.getByPlaceholder(/提示词/).fill('向导演致意');
   await bottomBar.getByRole('button', { name: '生成' }).click();
-  await expect(draftCard.locator('textarea').first()).toHaveValue(MOCK_TEXT, { timeout: 20_000 });
+  await expect(draftCard.getByText(MOCK_TEXT)).toBeVisible({ timeout: 20_000 });
   await draftCard.getByRole('button', { name: '确认落盘' }).click();
   await expect(page.getByText('#2')).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText(MOCK_TEXT)).toBeVisible();

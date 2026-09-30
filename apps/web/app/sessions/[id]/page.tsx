@@ -1,14 +1,17 @@
 'use client';
 
-// ★ 演出界面（§7.2 核心战场）：消息流 + 导演指令 → 生成草稿 → 轮询 →
-// 定密台（§5.7 ③：草稿按段落展示，kind 徽标 + 每段可见性开关 + 文本可编辑，
-// 确认落盘）+ 依次反应（§5.4 严格串行）+ 补发可见性（§2.2）+ 导演/化身直接发言。
-// PC 三栏：左在场名单，中剧情流 + 草稿卡，右导演面板。
+// ★ 演出界面（§7.2 核心战场）：消息流 + 底部发言栏（AI 角色 = 提示词生成草稿 /
+// 旁白·化身 = 直接落盘）→ 定密台（§5.7 ③：草稿按段落展示，kind 徽标 +
+// 每段可见性开关 + 文本可编辑，确认落盘）+ 依次反应（§5.4 严格串行）+
+// 补发可见性（§2.2）。
+// PC 三栏：左在场名单，中剧情流 + 草稿卡 + 底部发言栏，右生成控制（模型覆盖/依次反应）。
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, body, patch } from '@/components/api';
-import { btnCls, btnGhostCls, ErrorBanner, inputCls, labelCls, PageShell } from '@/components/ui';
+import { api, body, del, patch } from '@/components/api';
+import { AmbientLayer, readAmbience } from '@/components/ambient/AmbientLayer';
+import { SkinScope } from '@/components/skin';
+import { btnCls, btnGhostCls, ErrorBanner, inputCls, PageShell } from '@/components/ui';
 
 // ---------------------------------------------------------------------------
 // 类型
@@ -64,6 +67,7 @@ interface Troupe {
   id: string;
   worldId: string;
   name: string;
+  skin: string;
   defaultPersonaId: string | null;
 }
 
@@ -94,8 +98,8 @@ const KIND_LABEL: Record<MessageSegment['kind'], string> = {
 /** 非 public 段落在导演视图里的视觉降级（§2.3：导演可见全部，但一眼可辨） */
 const SEGMENT_DIM_CLS: Record<MessageSegment['visibility'], string> = {
   public: '',
-  self_director: 'italic text-gray-500',
-  director: 'italic text-purple-500',
+  self_director: 'italic text-muted-foreground',
+  director: 'italic text-director',
 };
 
 // ---------------------------------------------------------------------------
@@ -115,9 +119,13 @@ export default function SessionStagePage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  // 导演面板
+  // 底部发言栏：AI 角色模式 = 输入当作提示词 → AI 生成草稿 → 定密台确认落盘；
+  // 旁白/化身模式 = 文本直接落盘发言
   const [speakerId, setSpeakerId] = useState('');
-  const [directive, setDirective] = useState('');
+  const [composerMode, setComposerMode] = useState<'character' | 'player' | 'director'>(
+    'character',
+  );
+  const [composerText, setComposerText] = useState('');
   const [connections, setConnections] = useState<Connection[]>([]);
   const [presets, setPresets] = useState<Named[]>([]);
   const [connectionId, setConnectionId] = useState('');
@@ -125,13 +133,20 @@ export default function SessionStagePage() {
   const [presetId, setPresetId] = useState('');
   const [busy, setBusy] = useState(false);
 
-  // 直接发言
-  const [speakType, setSpeakType] = useState<'director' | 'player'>('director');
+  // 化身发言的目标化身（发言栏 player 模式）
   const [speakPersonaId, setSpeakPersonaId] = useState('');
-  const [speakText, setSpeakText] = useState('');
 
   // 定密台：ready 态按段落编辑（kind 只读徽标 + visibility 下拉 + 文本）
   const [editSegments, setEditSegments] = useState<MessageSegment[]>([]);
+  // 定密台阅读流：正在行内编辑的段落下标（null = 纯阅读态）
+  const [editingSeg, setEditingSeg] = useState<number | null>(null);
+
+  // 消息操作：编辑（段落级）/ 改提示词重演（截断到该条之前 + 重新生成）
+  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editMsgSegs, setEditMsgSegs] = useState<MessageSegment[]>([]);
+  const [replayId, setReplayId] = useState<string | null>(null);
+  const [replayPrompt, setReplayPrompt] = useState('');
 
   // 视角切换（信息不对称演示）：'director' = 全部段落；否则按该角色过滤（§2.3 第二级）
   const [viewAs, setViewAs] = useState<string>('director');
@@ -173,6 +188,7 @@ export default function SessionStagePage() {
     ]);
     setSession(s);
     setMessages(msgs);
+    setDrafts(drafts);
     // listBySession 按创建时间倒序：取最近的未完结草稿进入草稿卡
     setActiveDraft(drafts.find((d) => ACTIVE_STATUSES.has(d.status)) ?? null);
   }, [sessionId]);
@@ -214,6 +230,7 @@ export default function SessionStagePage() {
   // ready 内的轮询不重置（保留导演未保存的修改）
   useEffect(() => {
     if (activeDraft?.status === 'ready') setEditSegments(activeDraft.content ?? []);
+    setEditingSeg(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDraft?.id, activeDraft?.status]);
 
@@ -236,11 +253,12 @@ export default function SessionStagePage() {
       await run(async () => {
         await api(`/api/sessions/${sessionId}/drafts`, body({
           characterId: speakerId,
-          directive: directive || null,
+          directive: composerText.trim() || null,
           connectionId: connectionId || undefined,
           model: model || undefined,
           presetId: presetId || undefined,
         }));
+        setComposerText('');
         await refresh();
       });
     } finally {
@@ -248,13 +266,13 @@ export default function SessionStagePage() {
     }
   }
 
-  /** §5.4 依次反应：当前指令作为批次共用指令，在场名单顺序严格串行 */
+  /** §5.4 依次反应：发言栏当前输入作为批次共用指令，在场名单顺序严格串行 */
   async function startReactions() {
     setBusy(true);
     try {
       await run(async () => {
         await api(`/api/sessions/${sessionId}/reactions`, body({
-          directive: directive || null,
+          directive: composerText.trim() || null,
         }));
         await refresh();
       });
@@ -325,24 +343,88 @@ export default function SessionStagePage() {
   }
 
   async function speak() {
-    if (!speakText.trim()) return;
+    if (!composerText.trim()) return;
     await run(async () => {
       await api(`/api/sessions/${sessionId}/messages`, body({
-        senderType: speakType,
-        text: speakText,
-        personaId: speakType === 'player' ? speakPersonaId || undefined : undefined,
+        senderType: composerMode === 'player' ? 'player' : 'director',
+        text: composerText,
+        personaId: composerMode === 'player' ? speakPersonaId || undefined : undefined,
       }));
-      setSpeakText('');
+      setComposerText('');
+      await refresh();
+    });
+  }
+
+  // ---- 消息操作：编辑 / 删除 / 改提示词重演 ----
+
+  /** 尽力找回生成该消息时用的提示词：同角色的已确认草稿里，时间与消息落盘最接近的一份
+      （confirm 同事务内草稿 updatedAt 与消息 createdAt 仅差毫秒级，故不按先后而按最近匹配） */
+  function sourceDirectiveOf(m: Message): string {
+    if (m.senderType !== 'character') return '';
+    const at = new Date(m.createdAt).getTime();
+    const candidates = drafts
+      .filter((d) => d.status === 'confirmed' && d.characterId === m.senderId)
+      .map((d) => ({ d, gap: Math.abs(new Date(d.updatedAt).getTime() - at) }))
+      .filter((c) => c.gap <= 60_000)
+      .sort((a, b) => a.gap - b.gap);
+    return candidates[0]?.d.directive ?? '';
+  }
+
+  function startEdit(m: Message) {
+    setReplayId(null);
+    setEditingId(m.id);
+    setEditMsgSegs(m.content.map((s) => ({ ...s })));
+  }
+
+  async function saveMessageEdit(m: Message) {
+    await run(async () => {
+      await api(`/api/sessions/${sessionId}/messages/${m.id}`, patch({ segments: editMsgSegs }));
+      setEditingId(null);
+      await refresh();
+    });
+  }
+
+  async function removeMessage(m: Message) {
+    if (!window.confirm(`删除 #${m.seq}（${nameOf(m)}）？此操作不可撤销。`)) return;
+    await run(async () => {
+      await api(`/api/sessions/${sessionId}/messages/${m.id}`, del());
+      if (editingId === m.id) setEditingId(null);
+      if (replayId === m.id) setReplayId(null);
+      await refresh();
+    });
+  }
+
+  function startReplay(m: Message) {
+    setEditingId(null);
+    setReplayId(m.id);
+    setReplayPrompt(sourceDirectiveOf(m));
+  }
+
+  /** 改提示词重演：截断到该条之前（§7.1 truncate，悬挂草稿一并废弃），按新提示词重新生成 */
+  async function replayMessage(m: Message) {
+    if (m.senderType !== 'character' || !m.senderId) return;
+    await run(async () => {
+      await api(`/api/sessions/${sessionId}/messages/truncate`, body({ seq: m.seq - 1 }));
+      await api(`/api/sessions/${sessionId}/drafts`, body({
+        characterId: m.senderId,
+        directive: replayPrompt.trim() || null,
+        connectionId: connectionId || undefined,
+        model: model || undefined,
+        presetId: presetId || undefined,
+      }));
+      setReplayId(null);
       await refresh();
     });
   }
 
   if (!session || !troupe) {
     return (
-      <PageShell title="演出" nav={<Link href="/worlds">← 世界书列表</Link>}>
-        <ErrorBanner error={error} />
-        <p className="text-sm text-gray-500">加载中…</p>
-      </PageShell>
+      <SkinScope skin={troupe?.skin}>
+        <PageShell title="演出" nav={<Link href="/worlds">← 世界书列表</Link>}>
+          <ErrorBanner error={error} />
+          <p className="text-sm text-muted-foreground">加载中…</p>
+        </PageShell>
+      </SkinScope>
     );
   }
 
@@ -353,20 +435,35 @@ export default function SessionStagePage() {
   const batch = session.reactionProgress;
   const batchCurrentName =
     characters.find((c) => c.id === batch?.currentCharacterId)?.name ?? '';
+  const composerSelectCls =
+    'rounded-lg border border-input bg-muted/50 px-2 py-1.5 text-sm text-foreground focus:border-primary/50 focus:bg-card focus:outline-none';
+  const composerSubmitDisabled =
+    composerMode === 'character'
+      ? busy || !speakerId || castCharacters.length === 0
+      : !composerText.trim() || (composerMode === 'player' && !speakPersonaId);
+  // 题材皮肤：scene.skin（单场覆盖）> troupe.skin；氛围动画读 scene.ambience
+  const sceneObj =
+    session.scene && typeof session.scene === 'object'
+      ? (session.scene as Record<string, unknown>)
+      : null;
+  const activeSkin = typeof sceneObj?.skin === 'string' ? sceneObj.skin : troupe.skin;
 
   return (
-    <PageShell
+    <SkinScope skin={activeSkin}>
+      <AmbientLayer ambience={readAmbience(session.scene)} />
+      <div className="relative z-10">
+      <PageShell
       title={`演出：${session.title || '（无标题场次）'}`}
       nav={
         <>
-          <span className="text-gray-400">{troupe.name}</span>
+          <span className="text-muted-foreground">{troupe.name}</span>
           <Link href={`/troupes/${troupe.id}`}>← 团队</Link>
         </>
       }
     >
       <ErrorBanner error={error} />
       {notice && (
-        <div className="mb-4 rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+        <div className="mb-4 rounded border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
           {notice}
         </div>
       )}
@@ -404,12 +501,12 @@ export default function SessionStagePage() {
       <div className="pb-32 md:grid md:grid-cols-[180px_1fr_300px] md:gap-4 md:pb-0">
         {/* 左栏：在场名单（上下场/点名 + 补发可见性，§2.2）；移动端左抽屉 */}
         <aside
-          className={`fixed inset-y-0 left-0 z-40 w-64 space-y-2 overflow-y-auto bg-white p-3 shadow-xl transition-transform md:visible md:static md:z-auto md:w-auto md:translate-x-0 md:overflow-visible md:bg-transparent md:p-0 md:shadow-none md:transition-none ${
+          className={`fixed inset-y-0 left-0 z-40 w-64 space-y-2 overflow-y-auto bg-card p-3 shadow-xl transition-transform md:visible md:static md:z-auto md:w-auto md:translate-x-0 md:overflow-visible md:bg-transparent md:p-0 md:shadow-none md:transition-none ${
             leftDrawer ? 'visible translate-x-0' : 'invisible -translate-x-full'
           }`}
         >
           <div className="mb-1 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-gray-600">在场角色</h2>
+            <h2 className="text-sm font-semibold text-muted-foreground">在场角色</h2>
             <button className={`${btnGhostCls} md:hidden`} onClick={() => setLeftDrawer(false)}>
               收起
             </button>
@@ -419,23 +516,24 @@ export default function SessionStagePage() {
               <button
                 className={`block w-full rounded border px-2 py-1.5 text-left text-sm ${
                   speakerId === c.id
-                    ? 'border-blue-500 bg-blue-50 font-medium'
-                    : 'border-gray-200 hover:bg-gray-50'
+                    ? 'border-primary bg-accent font-medium'
+                    : 'border-border hover:bg-muted'
                 }`}
                 onClick={() => {
                   setSpeakerId(c.id);
+                  setComposerMode('character'); // 点名 = 指定 AI 角色发言
                   setLeftDrawer(false); // 移动端点名后收抽屉（PC 为 no-op 态）
                 }}
               >
                 {c.name}
-                {speakerId === c.id && <span className="ml-1 text-xs text-blue-500">◀ 点名</span>}
+                {speakerId === c.id && <span className="ml-1 text-xs text-primary">◀ 点名</span>}
                 {batch?.currentCharacterId === c.id && (
-                  <span className="ml-1 text-xs text-amber-600">◀ 反应中</span>
+                  <span className="ml-1 text-xs text-warning">◀ 反应中</span>
                 )}
               </button>
               {messages.length > 0 && (
                 <button
-                  className="block w-full rounded border border-gray-200 px-2 py-0.5 text-left text-xs text-gray-500 hover:bg-gray-50"
+                  className="block w-full rounded border border-border px-2 py-0.5 text-left text-xs text-muted-foreground hover:bg-muted"
                   title="把上场前的历史消息可见性补发给该角色（§2.2）"
                   onClick={() => void grantVisibility(c)}
                 >
@@ -445,10 +543,10 @@ export default function SessionStagePage() {
             </div>
           ))}
           {castCharacters.length === 0 && (
-            <p className="text-xs text-gray-400">没有在场角色，请回团队页面上场。</p>
+            <p className="text-xs text-muted-foreground">没有在场角色，请回团队页面上场。</p>
           )}
           {typeof session.scene === 'string' && session.scene && (
-            <div className="mt-4 rounded bg-gray-50 p-2 text-xs text-gray-500">
+            <div className="mt-4 rounded bg-muted/50 p-2 text-xs text-muted-foreground">
               <div className="mb-1 font-semibold">场景</div>
               {session.scene}
             </div>
@@ -458,10 +556,10 @@ export default function SessionStagePage() {
         {/* 中栏：剧情流 + 草稿卡 */}
         <section className="space-y-3">
           {/* 视角切换（§2.3 信息不对称演示）：导演 = 全部段落；角色 = 段落级过滤 */}
-          <div className="flex items-center gap-2 text-xs text-gray-500">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span>视角</span>
             <select
-              className="rounded border border-gray-300 px-1.5 py-0.5"
+              className="rounded border border-input px-1.5 py-0.5"
               value={viewAs}
               onChange={(e) => setViewAs(e.target.value)}
             >
@@ -477,119 +575,274 @@ export default function SessionStagePage() {
             {messages.map((m) => {
               const segs = visibleSegmentsOf(m);
               return (
-                <div key={m.id} className="rounded border border-gray-200 bg-white p-3 shadow-sm">
-                  <div className="mb-1 flex items-baseline gap-2 text-xs text-gray-400">
+                <div key={m.id} data-testid="message-card" className="rounded border border-border bg-card p-3 shadow-sm">
+                  <div className="mb-1 flex items-baseline gap-2 text-xs text-muted-foreground">
                     <span className="font-mono">#{m.seq}</span>
                     <span
                       className={`font-semibold ${
                         m.senderType === 'director'
-                          ? 'text-purple-600'
+                          ? 'text-director'
                           : m.senderType === 'player'
-                            ? 'text-green-700'
-                            : 'text-blue-700'
+                            ? 'text-success'
+                            : 'text-primary'
                       }`}
                     >
                       {nameOf(m)}
                     </span>
-                  </div>
-                  {segs.length === 0 ? (
-                    <div className="text-xs italic text-gray-300">（此条在当前视角不可见）</div>
-                  ) : (
-                    segs.map((seg, i) => (
-                      <div key={i} className="mt-1">
-                        <span className="mr-1 rounded bg-gray-100 px-1 text-xs text-gray-500">
-                          {KIND_LABEL[seg.kind]}·{VISIBILITY_LABEL[seg.visibility]}
-                        </span>
-                        <span
-                          className={`whitespace-pre-wrap text-sm ${SEGMENT_DIM_CLS[seg.visibility]}`}
+                    {/* 消息操作（导演视角才显示）：编辑 / 改提示词重演 / 删除 */}
+                    {viewAs === 'director' && editingId !== m.id && replayId !== m.id && (
+                      <span className="ml-auto flex gap-1">
+                        <button
+                          className="rounded border border-border px-1.5 py-0.5 text-muted-foreground hover:bg-muted"
+                          onClick={() => startEdit(m)}
                         >
-                          {seg.text}
-                        </span>
+                          编辑
+                        </button>
+                        {m.senderType === 'character' && (
+                          <button
+                            className="rounded border border-border px-1.5 py-0.5 text-muted-foreground hover:bg-muted"
+                            title="修改提示词并从这条重新生成（此条及其后消息会被删除）"
+                            onClick={() => startReplay(m)}
+                          >
+                            改提示词重演
+                          </button>
+                        )}
+                        <button
+                          className="rounded border border-destructive/30 px-1.5 py-0.5 text-destructive hover:bg-destructive/10"
+                          onClick={() => void removeMessage(m)}
+                        >
+                          删除
+                        </button>
+                      </span>
+                    )}
+                  </div>
+                  {editingId === m.id ? (
+                    <div className="space-y-2">
+                      {editMsgSegs.map((seg, i) => (
+                        <div key={i} className="rounded border border-border bg-muted/50 p-2">
+                          <div className="mb-1 flex items-center gap-2 text-xs">
+                            <span className="rounded bg-muted px-1 text-muted-foreground">
+                              {KIND_LABEL[seg.kind]}
+                            </span>
+                            <select
+                              className="rounded border border-input px-1 py-0.5"
+                              value={seg.visibility}
+                              onChange={(e) =>
+                                setEditMsgSegs((prev) =>
+                                  prev.map((s, j) =>
+                                    j === i
+                                      ? {
+                                          ...s,
+                                          visibility: e.target
+                                            .value as MessageSegment['visibility'],
+                                        }
+                                      : s,
+                                  ),
+                                )
+                              }
+                            >
+                              {(
+                                Object.keys(VISIBILITY_LABEL) as MessageSegment['visibility'][]
+                              ).map((v) => (
+                                <option key={v} value={v}>
+                                  {VISIBILITY_LABEL[v]}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <textarea
+                            className={inputCls}
+                            rows={2}
+                            value={seg.text}
+                            onChange={(e) =>
+                              setEditMsgSegs((prev) =>
+                                prev.map((s, j) => (j === i ? { ...s, text: e.target.value } : s)),
+                              )
+                            }
+                          />
+                        </div>
+                      ))}
+                      <div className="flex gap-2">
+                        <button className={btnCls} onClick={() => void saveMessageEdit(m)}>
+                          保存修改
+                        </button>
+                        <button className={btnGhostCls} onClick={() => setEditingId(null)}>
+                          取消
+                        </button>
                       </div>
+                    </div>
+                  ) : replayId === m.id ? (
+                    <div className="space-y-2 rounded border border-warning/30 bg-warning/10 p-2">
+                      <p className="text-xs text-warning">
+                        改提示词重演：将从 #{m.seq} 重新生成——此条及其后消息会被删除，
+                        生成结果进草稿卡，确认后落盘。
+                      </p>
+                      <textarea
+                        className={`${inputCls} bg-card`}
+                        rows={2}
+                        placeholder="新提示词（留空 = 角色自发反应）"
+                        value={replayPrompt}
+                        onChange={(e) => setReplayPrompt(e.target.value)}
+                      />
+                      <div className="flex gap-2">
+                        <button className={btnCls} onClick={() => void replayMessage(m)}>
+                          重演生成
+                        </button>
+                        <button className={btnGhostCls} onClick={() => setReplayId(null)}>
+                          取消
+                        </button>
+                      </div>
+                    </div>
+                  ) : segs.length === 0 ? (
+                    <div className="text-xs italic text-muted-foreground">（此条在当前视角不可见）</div>
+                  ) : (
+                    // 阅读流：类型靠排版区分（心声斜体），非公开段落挂可见性小标
+                    segs.map((seg, i) => (
+                      <p
+                        key={i}
+                        className={`mt-1 whitespace-pre-wrap text-sm ${
+                          seg.kind === 'thought' ? 'italic' : ''
+                        } ${SEGMENT_DIM_CLS[seg.visibility]}`}
+                      >
+                        {seg.text}
+                        {seg.visibility !== 'public' && (
+                          <span className="ml-1 rounded bg-muted px-1 align-middle text-xs">
+                            {VISIBILITY_LABEL[seg.visibility]}
+                          </span>
+                        )}
+                      </p>
                     ))
                   )}
                 </div>
               );
             })}
             {messages.length === 0 && (
-              <p className="text-sm text-gray-400">剧情尚未开始——确认开场草稿，或先来一条旁白。</p>
+              <p className="text-sm text-muted-foreground">剧情尚未开始——确认开场草稿，或先来一条旁白。</p>
             )}
             <div ref={bottomRef} />
           </div>
 
           {/* 草稿卡（定密台，§5.7 ③） */}
           {activeDraft && (
-            <div className="rounded border-2 border-amber-300 bg-amber-50 p-3">
+            <div data-testid="draft-card" className="rounded border-2 border-warning/30 bg-warning/10 p-3">
               <div className="mb-2 flex items-center gap-2 text-sm">
                 <span className="font-semibold">草稿 · {speakerName}</span>
-                <span className="rounded bg-amber-200 px-1.5 text-xs">{activeDraft.status}</span>
-                {batch && <span className="text-xs text-amber-700">依次反应 {batch.current}/{batch.total}</span>}
+                <span className="rounded bg-warning/20 px-1.5 text-xs">{activeDraft.status}</span>
+                {batch && <span className="text-xs text-warning">依次反应 {batch.current}/{batch.total}</span>}
                 {activeDraft.resolvedModel && (
-                  <span className="text-xs text-gray-500">模型：{activeDraft.resolvedModel}</span>
+                  <span className="text-xs text-muted-foreground">模型：{activeDraft.resolvedModel}</span>
                 )}
                 {activeDraft.directive && (
-                  <span className="truncate text-xs text-gray-500">
+                  <span className="truncate text-xs text-muted-foreground">
                     指令：{activeDraft.directive}
                   </span>
                 )}
               </div>
               {activeDraft.outputTruncated && (
-                <div className="mb-2 rounded bg-orange-100 px-2 py-1 text-xs text-orange-700">
+                <div className="mb-2 rounded bg-warning/10 px-2 py-1 text-xs text-warning">
                   已截断越权内容：模型替其他在场角色写了台词/动作，该部分已从草稿中移除（§5.7 ②）。
                 </div>
               )}
               {activeDraft.status === 'failed' ? (
-                <div className="mb-2 rounded bg-red-50 px-2 py-1 text-xs text-red-600">
+                <div className="mb-2 rounded bg-destructive/10 px-2 py-1 text-xs text-destructive">
                   {activeDraft.error}
                 </div>
               ) : activeDraft.status === 'ready' ? (
-                <div className="space-y-2">
-                  {editSegments.map((seg, i) => (
-                    <div key={i} className="rounded border border-amber-200 bg-white p-2">
-                      <div className="mb-1 flex items-center gap-2 text-xs">
-                        <span className="rounded bg-gray-100 px-1 text-gray-600">
-                          {KIND_LABEL[seg.kind]}
-                        </span>
-                        <select
-                          className="rounded border border-gray-300 px-1 py-0.5"
-                          value={seg.visibility}
-                          onChange={(e) =>
-                            setEditSegments((prev) =>
-                              prev.map((s, j) =>
-                                j === i
-                                  ? {
-                                      ...s,
-                                      visibility: e.target
-                                        .value as MessageSegment['visibility'],
-                                    }
-                                  : s,
-                              ),
-                            )
-                          }
+                <div>
+                  {/* 阅读流（§5.7 ③ 定密台）：与上屏消息同款排版，审稿即通读；
+                      点击段落原地展开编辑器（类型/可见性/文本），完成收起 */}
+                  <div className="rounded-lg bg-card px-3 py-2 leading-relaxed">
+                    {editSegments.map((seg, i) =>
+                      editingSeg === i ? (
+                        <div key={i} className="my-2 rounded-lg border border-warning/40 p-2">
+                          <div className="mb-1 flex items-center gap-2 text-xs">
+                            <select
+                              aria-label="段落类型"
+                              className="rounded border border-input bg-background px-1 py-0.5"
+                              value={seg.kind}
+                              onChange={(e) =>
+                                setEditSegments((prev) =>
+                                  prev.map((s, j) =>
+                                    j === i
+                                      ? { ...s, kind: e.target.value as MessageSegment['kind'] }
+                                      : s,
+                                  ),
+                                )
+                              }
+                            >
+                              {(Object.keys(KIND_LABEL) as MessageSegment['kind'][]).map((k) => (
+                                <option key={k} value={k}>
+                                  {KIND_LABEL[k]}
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              aria-label="可见性"
+                              className="rounded border border-input bg-background px-1 py-0.5"
+                              value={seg.visibility}
+                              onChange={(e) =>
+                                setEditSegments((prev) =>
+                                  prev.map((s, j) =>
+                                    j === i
+                                      ? {
+                                          ...s,
+                                          visibility: e.target
+                                            .value as MessageSegment['visibility'],
+                                        }
+                                      : s,
+                                  ),
+                                )
+                              }
+                            >
+                              {(
+                                Object.keys(VISIBILITY_LABEL) as MessageSegment['visibility'][]
+                              ).map((v) => (
+                                <option key={v} value={v}>
+                                  {VISIBILITY_LABEL[v]}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              className="ml-auto rounded border border-border px-2 py-0.5 hover:bg-muted"
+                              onClick={() => setEditingSeg(null)}
+                            >
+                              完成
+                            </button>
+                          </div>
+                          <textarea
+                            autoFocus
+                            className={inputCls}
+                            rows={Math.min(8, Math.max(2, seg.text.split('\n').length + 1))}
+                            value={seg.text}
+                            onChange={(e) =>
+                              setEditSegments((prev) =>
+                                prev.map((s, j) => (j === i ? { ...s, text: e.target.value } : s)),
+                              )
+                            }
+                          />
+                        </div>
+                      ) : (
+                        <p
+                          key={i}
+                          data-testid="draft-segment"
+                          title={`${KIND_LABEL[seg.kind]} · ${VISIBILITY_LABEL[seg.visibility]}（点击编辑）`}
+                          onClick={() => setEditingSeg(i)}
+                          className={`-mx-1 mt-1.5 cursor-text whitespace-pre-wrap rounded px-1 text-sm transition-colors first:mt-0 hover:bg-muted/60 ${
+                            seg.kind === 'thought' ? 'italic text-muted-foreground' : ''
+                          }`}
                         >
-                          {(
-                            Object.keys(VISIBILITY_LABEL) as MessageSegment['visibility'][]
-                          ).map((v) => (
-                            <option key={v} value={v}>
-                              {VISIBILITY_LABEL[v]}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <textarea
-                        className={inputCls}
-                        rows={2}
-                        value={seg.text}
-                        onChange={(e) =>
-                          setEditSegments((prev) =>
-                            prev.map((s, j) => (j === i ? { ...s, text: e.target.value } : s)),
-                          )
-                        }
-                      />
-                    </div>
-                  ))}
+                          {seg.text}
+                          {seg.visibility !== 'public' && (
+                            <span className="ml-1 rounded bg-muted px-1 align-middle text-xs text-muted-foreground">
+                              {VISIBILITY_LABEL[seg.visibility]}
+                            </span>
+                          )}
+                        </p>
+                      ),
+                    )}
+                  </div>
                   {segmentsDirty && (
-                    <div className="flex items-center gap-2 text-xs text-amber-700">
+                    <div className="mt-2 flex items-center gap-2 text-xs text-warning">
                       <span>定密有未保存修改（确认落盘时会自动保存）</span>
                       <button className={btnGhostCls} onClick={() => void saveSegments()}>
                         保存定密
@@ -599,7 +852,7 @@ export default function SessionStagePage() {
                 </div>
               ) : (
                 <textarea
-                  className={`${inputCls} bg-white`}
+                  className={`${inputCls} bg-card`}
                   rows={5}
                   value={draftText}
                   readOnly
@@ -631,11 +884,101 @@ export default function SessionStagePage() {
               </div>
             </div>
           )}
+
+          {/* 底部发言栏（PC/移动统一）：AI 角色模式 = 输入当提示词 → 生成草稿 →
+              上方草稿卡确认落盘输出；旁白/化身模式 = 文本直接落盘发言。
+              移动端 fixed 吸底，PC 静态位于中栏底部。Ctrl/⌘+Enter 提交。 */}
+          <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-card/95 p-3 backdrop-blur md:static md:z-auto md:rounded-xl md:border md:shadow-sm">
+            <textarea
+              className="max-h-56 min-h-20 w-full resize-y rounded-lg border border-input bg-muted/50 px-3 py-2 text-base leading-relaxed focus:border-primary/50 focus:bg-card focus:outline-none focus:ring-2 focus:ring-ring/30 md:text-sm"
+              rows={3}
+              placeholder={
+                composerMode === 'character'
+                  ? '提示词：告诉 AI 这一拍怎么演（留空 = 角色自发反应）'
+                  : '直接落盘的文本，支持 {{char}} / {{user}} 宏'
+              }
+              value={composerText}
+              onChange={(e) => setComposerText(e.target.value)}
+              onKeyDown={(e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !composerSubmitDisabled) {
+                  e.preventDefault();
+                  if (composerMode === 'character') void generate();
+                  else void speak();
+                }
+              }}
+            />
+            <div className="mt-2 flex items-center gap-2">
+              <select
+                className={`${composerSelectCls} w-24 flex-none`}
+                value={composerMode}
+                onChange={(e) =>
+                  setComposerMode(e.target.value as 'character' | 'player' | 'director')
+                }
+                title="发言方式"
+              >
+                <option value="character">AI 角色</option>
+                <option value="player">化身</option>
+                <option value="director">旁白</option>
+              </select>
+              {composerMode === 'character' && (
+                <select
+                  className={`${composerSelectCls} min-w-0 flex-1 md:flex-none`}
+                  value={speakerId}
+                  onChange={(e) => setSpeakerId(e.target.value)}
+                  title="发言角色"
+                >
+                  {castCharacters.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {composerMode === 'player' && (
+                <select
+                  className={`${composerSelectCls} min-w-0 flex-1 md:flex-none`}
+                  value={speakPersonaId}
+                  onChange={(e) => setSpeakPersonaId(e.target.value)}
+                  title="发言化身"
+                >
+                  <option value="">选择化身…</option>
+                  {personas.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <span className="hidden flex-1 truncate text-right text-xs text-muted-foreground md:inline">
+                {composerMode === 'character'
+                  ? '提示词 → 草稿 → 确认落盘输出'
+                  : '支持 {{char}} / {{user}} 宏'}
+                　·　Ctrl+Enter 提交
+              </span>
+              {composerMode === 'character' ? (
+                <button
+                  className={`${btnCls} min-w-24 flex-none`}
+                  disabled={composerSubmitDisabled}
+                  onClick={() => void generate()}
+                >
+                  ✨ 生成
+                </button>
+              ) : (
+                <button
+                  className={`${btnCls} min-w-24 flex-none`}
+                  disabled={composerSubmitDisabled}
+                  onClick={() => void speak()}
+                >
+                  发言
+                </button>
+              )}
+            </div>
+          </div>
         </section>
 
         {/* 右栏：导演面板；移动端右抽屉 */}
         <aside
-          className={`fixed inset-y-0 right-0 z-40 w-72 space-y-4 overflow-y-auto bg-white p-3 shadow-xl transition-transform md:visible md:static md:z-auto md:w-auto md:translate-x-0 md:overflow-visible md:bg-transparent md:p-0 md:shadow-none md:transition-none ${
+          className={`fixed inset-y-0 right-0 z-40 w-72 space-y-4 overflow-y-auto bg-card p-3 shadow-xl transition-transform md:visible md:static md:z-auto md:w-auto md:translate-x-0 md:overflow-visible md:bg-transparent md:p-0 md:shadow-none md:transition-none ${
             rightDrawer ? 'visible translate-x-0' : 'invisible translate-x-full'
           }`}
         >
@@ -644,31 +987,10 @@ export default function SessionStagePage() {
               收起
             </button>
           </div>
-          <div className="rounded border border-gray-200 bg-white p-3 shadow-sm">
-            <h2 className="mb-2 text-sm font-semibold text-gray-600">导演指令</h2>
-            <textarea
-              className={inputCls}
-              rows={3}
-              placeholder="例：走向窗边（留空 = 角色自发反应）"
-              value={directive}
-              onChange={(e) => setDirective(e.target.value)}
-            />
-            <div className="mt-2 space-y-2">
-              <div>
-                <label className={labelCls}>发言角色（在场名单）</label>
-                <select
-                  className={inputCls}
-                  value={speakerId}
-                  onChange={(e) => setSpeakerId(e.target.value)}
-                >
-                  {castCharacters.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <details className="text-xs text-gray-500">
+          <div className="rounded border border-border bg-card p-3 shadow-sm">
+            <h2 className="mb-2 text-sm font-semibold text-muted-foreground">生成控制</h2>
+            <div className="space-y-2">
+              <details className="text-xs text-muted-foreground">
                 <summary className="cursor-pointer">单次模型覆盖（可空 = 按绑定链）</summary>
                 <div className="mt-2 space-y-2">
                   <select
@@ -703,30 +1025,23 @@ export default function SessionStagePage() {
                   </select>
                 </div>
               </details>
-              <button
-                className={`${btnCls} w-full`}
-                disabled={busy || !speakerId || castCharacters.length === 0}
-                onClick={() => void generate()}
-              >
-                生成草稿
-              </button>
               {/* §5.4 依次反应：严格串行，A 落盘后 B 才开始生成 */}
               <button
                 className={`${btnGhostCls} w-full`}
                 disabled={busy || !!batch || castCharacters.length < 2}
-                title="在场角色按名单顺序依次反应（严格串行，§5.4）"
+                title="在场角色按名单顺序依次反应（严格串行，§5.4），发言栏当前输入作为批次共用指令"
                 onClick={() => void startReactions()}
               >
                 依次反应（全员）
               </button>
               {batch && (
-                <div className="rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+                <div className="rounded border border-warning/30 bg-warning/10 px-2 py-1.5 text-xs text-warning">
                   <div>
                     依次反应进行中：第 {batch.current}/{batch.total} 位
                     {batchCurrentName && ` · 当前：${batchCurrentName}`}
                   </div>
                   <button
-                    className="mt-1 rounded border border-amber-300 px-2 py-0.5 hover:bg-amber-100"
+                    className="mt-1 rounded border border-warning/50 px-2 py-0.5 hover:bg-warning/10"
                     onClick={() => void cancelReactions()}
                   >
                     取消批次
@@ -735,91 +1050,10 @@ export default function SessionStagePage() {
               )}
             </div>
           </div>
-
-          <div className="rounded border border-gray-200 bg-white p-3 shadow-sm">
-            <h2 className="mb-2 text-sm font-semibold text-gray-600">直接发言（落盘）</h2>
-            <div className="mb-2 flex gap-3 text-sm">
-              <label className="flex items-center gap-1">
-                <input
-                  type="radio"
-                  checked={speakType === 'director'}
-                  onChange={() => setSpeakType('director')}
-                />
-                导演旁白
-              </label>
-              <label className="flex items-center gap-1">
-                <input
-                  type="radio"
-                  checked={speakType === 'player'}
-                  onChange={() => setSpeakType('player')}
-                />
-                化身发言
-              </label>
-            </div>
-            {speakType === 'player' && (
-              <select
-                className={`${inputCls} mb-2`}
-                value={speakPersonaId}
-                onChange={(e) => setSpeakPersonaId(e.target.value)}
-              >
-                <option value="">选择化身…</option>
-                {personas.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            )}
-            <textarea
-              className={inputCls}
-              rows={3}
-              placeholder="支持 {{char}} / {{user}} 宏，落盘前替换"
-              value={speakText}
-              onChange={(e) => setSpeakText(e.target.value)}
-            />
-            <button
-              className={`${btnCls} mt-2 w-full`}
-              disabled={!speakText.trim() || (speakType === 'player' && !speakPersonaId)}
-              onClick={() => void speak()}
-            >
-              发言
-            </button>
-          </div>
         </aside>
       </div>
-
-      {/* 移动端底部固定输入栏（M4 §7.2：指令输入 + 发言角色 + 生成入口）。
-          注意：inputCls 自带 w-full，flex 行内会把按钮挤出视口，这里用无 w-full 的局部类 */}
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-gray-200 bg-white p-2 md:hidden">
-        <div className="flex items-end gap-2">
-          <select
-            className="w-24 flex-none rounded border border-gray-300 px-2 py-1 text-base focus:border-blue-500 focus:outline-none"
-            value={speakerId}
-            onChange={(e) => setSpeakerId(e.target.value)}
-            title="发言角色"
-          >
-            {castCharacters.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-          <textarea
-            className="min-w-0 flex-1 rounded border border-gray-300 px-2 py-1 text-base focus:border-blue-500 focus:outline-none"
-            rows={2}
-            placeholder="导演指令（留空 = 自发反应）"
-            value={directive}
-            onChange={(e) => setDirective(e.target.value)}
-          />
-          <button
-            className={`${btnCls} flex-none`}
-            disabled={busy || !speakerId || castCharacters.length === 0}
-            onClick={() => void generate()}
-          >
-            生成
-          </button>
-        </div>
+      </PageShell>
       </div>
-    </PageShell>
+    </SkinScope>
   );
 }

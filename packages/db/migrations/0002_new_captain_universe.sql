@@ -1,0 +1,1 @@
+ALTER TABLE "troupes" ADD COLUMN "skin" text DEFAULT 'modern' NOT NULL;

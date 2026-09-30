@@ -4,6 +4,15 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { api, body, del } from '@/components/api';
 import { btnCls, btnDangerCls, cardCls, ErrorBanner, inputCls, PageShell } from '@/components/ui';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface World {
   id: string;
@@ -18,6 +27,7 @@ export default function WorldsPage() {
   const [premise, setPremise] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<World | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -46,10 +56,11 @@ export default function WorldsPage() {
     }
   }
 
-  async function remove(id: string) {
-    if (!window.confirm('删除世界书将连带删除其下角色/团队/场次，确认？')) return;
+  async function confirmDelete() {
+    if (!pendingDelete) return;
     try {
-      await api(`/api/worlds/${id}`, del());
+      await api(`/api/worlds/${pendingDelete.id}`, del());
+      setPendingDelete(null);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -80,21 +91,39 @@ export default function WorldsPage() {
         </div>
       </div>
       <div className="mt-4 space-y-2">
-        {worlds.length === 0 && <p className="text-sm text-gray-500">还没有世界书。</p>}
+        {worlds.length === 0 && <p className="text-sm text-muted-foreground">还没有世界书。</p>}
         {worlds.map((w) => (
           <div key={w.id} className={`${cardCls} flex items-center gap-4`}>
-            <Link href={`/worlds/${w.id}`} className="font-semibold text-blue-600 hover:underline">
+            <Link href={`/worlds/${w.id}`} className="font-semibold text-primary hover:underline">
               {w.title}
             </Link>
-            <span className="flex-1 truncate text-sm text-gray-500">
+            <span className="flex-1 truncate text-sm text-muted-foreground">
               {typeof w.premise === 'string' ? w.premise : ''}
             </span>
-            <button className={btnDangerCls} onClick={() => void remove(w.id)}>
+            <button className={btnDangerCls} onClick={() => setPendingDelete(w)}>
               删除
             </button>
           </div>
         ))}
       </div>
+      <Dialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>删除世界书</DialogTitle>
+            <DialogDescription>
+              删除「{pendingDelete?.title}」将连带删除其下角色/团队/场次，且不可恢复。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingDelete(null)}>
+              取消
+            </Button>
+            <Button variant="destructive" onClick={() => void confirmDelete()}>
+              删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageShell>
   );
 }

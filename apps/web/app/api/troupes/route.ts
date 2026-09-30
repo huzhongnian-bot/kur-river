@@ -1,7 +1,8 @@
 // /api/troupes —— 演出团队 CRUD（§2.2 Troupe）；列表按 ?worldId= 过滤
 import { getRepos } from '@/server/repos';
 import { badRequest, handleError, json, notFound, readBody } from '@/server/http';
-import { isUuid, optJson, optString, optUuid, reqString, reqUuid } from '@/server/validate';
+import { isUuid, optEnum, optJson, optString, optUuid, reqString, reqUuid } from '@/server/validate';
+import { SKIN_IDS } from '@/lib/skins';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,6 +37,7 @@ export async function POST(req: Request) {
       name: reqString(body, 'name', 200),
       outline: optJson(body, 'outline'),
       toneDirective: optString(body, 'toneDirective'),
+      skin: optEnum(body, 'skin', SKIN_IDS),
       defaultPersonaId,
       llmConnectionId: optUuid(body, 'llmConnectionId'),
       model: optString(body, 'model', 200),

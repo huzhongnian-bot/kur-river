@@ -73,10 +73,14 @@ test('M1 单人戏 UI 闭环：建世界 → 开场确认 → 指令生成 → �
   await page.goto(`${webBase}${sessionHref}`);
 
   // ---- 开场草稿（§5.2.2）：宏已替换 → 确认落盘 seq=1 -----------------------
-  const draftCard = page.locator('div.border-amber-300');
+  const draftCard = page.getByTestId('draft-card');
   await expect(draftCard.getByText('草稿 · Alice')).toBeVisible();
+  // 阅读流：宏替换后的内容直接可读；点击段落 → 行内编辑器
+  await expect(draftCard.getByText(/导演，好戏开场/)).toBeVisible();
+  await expect(draftCard.getByText(/Alice 敬上/)).toBeVisible();
+  await draftCard.getByText(/导演，好戏开场/).click();
   await expect(draftCard.locator('textarea')).toHaveValue(/导演，好戏开场/);
-  await expect(draftCard.locator('textarea')).toHaveValue(/Alice 敬上/);
+  await draftCard.getByRole('button', { name: '完成' }).click();
   const sessionUrl = page.url();
   await draftCard.getByRole('button', { name: '确认落盘' }).click();
   await expect(page.getByText('#1')).toBeVisible({ timeout: 10_000 });
@@ -96,13 +100,41 @@ test('M1 单人戏 UI 闭环：建世界 → 开场确认 → 指令生成 → �
   await page.getByRole('button', { name: '保存全局默认' }).click();
   await expect(page.getByText('全局默认已保存')).toBeVisible();
 
-  // ---- 回到演出界面：指令生成（走全局默认连接）→ 确认 seq=2 ------------------
+  // ---- 回到演出界面：底部发言栏输入提示词 → AI 生成（走全局默认连接）→ 确认 seq=2 ----
   await page.goto(sessionUrl);
-  await page.getByPlaceholder(/例：走向窗边/).fill('让 {{char}} 向 {{user}} 致意');
-  await page.getByRole('button', { name: '生成草稿' }).click();
+  await page.getByPlaceholder(/提示词/).fill('让 {{char}} 向 {{user}} 致意');
+  await page.getByRole('button', { name: '✨ 生成' }).click();
   await expect(draftCard.getByText('草稿 · Alice')).toBeVisible();
-  await expect(draftCard.locator('textarea')).toHaveValue(MOCK_TEXT, { timeout: 20_000 });
+  await expect(draftCard.getByText(MOCK_TEXT)).toBeVisible({ timeout: 20_000 });
   await draftCard.getByRole('button', { name: '确认落盘' }).click();
   await expect(page.getByText('#2')).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText(MOCK_TEXT)).toBeVisible();
+
+  // ---- 消息操作：编辑 / 改提示词重演 / 删除 --------------------------------
+  const cardOf = (seq: string) =>
+    page.getByTestId('message-card').filter({
+      has: page.getByText(seq, { exact: true }),
+    });
+
+  // 编辑：段落文本改写 → 保存 → 上屏内容更新
+  await cardOf('#2').getByRole('button', { name: '编辑' }).click();
+  await cardOf('#2').locator('textarea').first().fill('改过的话：雪落有声。');
+  await cardOf('#2').getByRole('button', { name: '保存修改' }).click();
+  await expect(page.getByText('改过的话：雪落有声。')).toBeVisible({ timeout: 10_000 });
+
+  // 改提示词重演：预填原提示词（草稿留痕）→ 换新提示词 → 重演 → 确认后重新上屏
+  await cardOf('#2').getByRole('button', { name: '改提示词重演' }).click();
+  const replayBox = cardOf('#2').locator('textarea');
+  await expect(replayBox).toHaveValue(/致意/); // 预填了生成该条时用的提示词
+  await replayBox.fill('换个版本');
+  await cardOf('#2').getByRole('button', { name: '重演生成' }).click();
+  await expect(draftCard.getByText('草稿 · Alice')).toBeVisible();
+  await expect(draftCard.getByText(MOCK_TEXT)).toBeVisible({ timeout: 20_000 });
+  await draftCard.getByRole('button', { name: '确认落盘' }).click();
+  await expect(cardOf('#2').getByText(MOCK_TEXT)).toBeVisible({ timeout: 10_000 });
+
+  // 删除：确认对话框 → 消息下屏
+  page.on('dialog', (d) => void d.accept());
+  await cardOf('#2').getByRole('button', { name: '删除' }).click();
+  await expect(page.getByText('#2', { exact: true })).toBeHidden({ timeout: 10_000 });
 });

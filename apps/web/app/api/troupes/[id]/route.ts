@@ -1,7 +1,8 @@
 // /api/troupes/:id —— 单团队读写删；GET 附带成员与化身名校验后的展示数据
 import { getRepos } from '@/server/repos';
 import { badRequest, handleError, json, notFound, readBody, type RouteCtx } from '@/server/http';
-import { optJson, optString, optUuid, pathUuid } from '@/server/validate';
+import { optEnum, optJson, optString, optUuid, pathUuid } from '@/server/validate';
+import { SKIN_IDS } from '@/lib/skins';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -40,6 +41,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
       name: optString(body, 'name', 200) ?? undefined,
       outline: 'outline' in body ? optJson(body, 'outline') : undefined,
       toneDirective: optString(body, 'toneDirective'),
+      skin: optEnum(body, 'skin', SKIN_IDS),
       defaultPersonaId,
       llmConnectionId: optUuid(body, 'llmConnectionId'),
       model: optString(body, 'model', 200),

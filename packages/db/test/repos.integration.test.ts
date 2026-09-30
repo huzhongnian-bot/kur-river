@@ -3,8 +3,7 @@
 //
 // 门控：仅当显式设置 DATABASE_URL_TEST 时运行（M1-P1 阶段 `pnpm test`
 // 不起数据库，本文件全部用例跳过）。用法：
-//   pnpm db:dev  # 一个终端
-//   DATABASE_URL_TEST=postgresql://postgres:postgres@localhost:54329/kur_river \
+//   DATABASE_URL_TEST=postgres://postgres@localhost:5432/kurriver \
 //     pnpm --filter @kur-river/db test
 
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';

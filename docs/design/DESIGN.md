@@ -194,7 +194,7 @@ ORDER BY seq DESC LIMIT N;
 | 层 | 选型 | 理由 |
 |---|---|---|
 | 框架 | Next.js 15（App Router）+ TypeScript | 全栈一体，Server Components + Route Handlers |
-| 样式 | Tailwind CSS | 响应式断点，PC/移动共用组件 |
+| 样式 | Tailwind CSS v4 + shadcn/ui（Base UI 基元） | 语义 token（--background/--card/--primary…）驱动；题材皮肤 = `app/skins/*.css` 按 `[data-skin]` 覆盖变量，troupe.skin 挂皮肤、scene.skin 单场覆盖；氛围动画 = `components/ambient/` canvas 粒子，scene.ambience 驱动 |
 | 数据库 | PostgreSQL + JSONB | 关系主干（消息流/可见性/层级）+ 文档载荷（卡/条目） |
 | ORM | Drizzle（或 Prisma，二选一） | 见 §6.3 讨论 |
 | 包管理 | pnpm workspaces | monorepo，核心引擎独立成包 |

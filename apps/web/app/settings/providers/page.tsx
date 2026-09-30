@@ -132,14 +132,14 @@ export default function ProvidersSettingsPage() {
     <PageShell title="LLM 设置" nav={<Link href="/">← 首页</Link>}>
       <ErrorBanner error={error} />
       {notice && (
-        <div className="mb-4 rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+        <div className="mb-4 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
           {notice}
         </div>
       )}
       <div className="space-y-4">
         <section className={cardCls}>
           <h2 className="mb-3 font-semibold">连接（openai-compatible）</h2>
-          <div className="mb-4 grid grid-cols-1 gap-2 rounded bg-gray-50 p-3 md:grid-cols-2">
+          <div className="mb-4 grid grid-cols-1 gap-2 rounded bg-muted/50 p-3 md:grid-cols-2">
             <div>
               <label className={labelCls}>名称 *</label>
               <input
@@ -192,14 +192,14 @@ export default function ProvidersSettingsPage() {
           </div>
           <ul className="space-y-2 text-sm">
             {connections.map((c) => (
-              <li key={c.id} className="rounded border border-gray-100 p-2">
+              <li key={c.id} className="rounded border border-border p-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium">{c.name}</span>
-                  <span className="text-xs text-gray-400">{c.baseUrl}</span>
-                  <span className="rounded bg-gray-100 px-1.5 text-xs">
+                  <span className="text-xs text-muted-foreground">{c.baseUrl}</span>
+                  <span className="rounded bg-muted px-1.5 text-xs">
                     {c.hasApiKey ? '已配 key' : '无 key'}
                   </span>
-                  <span className="rounded bg-gray-100 px-1.5 text-xs">
+                  <span className="rounded bg-muted px-1.5 text-xs">
                     默认模型：{c.defaultModel ?? '—'}
                   </span>
                   <span className="flex-1" />
@@ -249,7 +249,7 @@ export default function ProvidersSettingsPage() {
                       <button
                         key={m}
                         title="设为该连接的默认模型"
-                        className="rounded bg-blue-50 px-1.5 py-0.5 text-xs text-blue-700 hover:bg-blue-100"
+                        className="rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary hover:bg-primary/20"
                         onClick={() =>
                           void run(async () => {
                             await api(`/api/providers/connections/${c.id}`, patch({ defaultModel: m }));
@@ -264,13 +264,13 @@ export default function ProvidersSettingsPage() {
                 )}
               </li>
             ))}
-            {connections.length === 0 && <li className="text-gray-400">还没有连接。</li>}
+            {connections.length === 0 && <li className="text-muted-foreground">还没有连接。</li>}
           </ul>
         </section>
 
         <section className={cardCls}>
           <h2 className="mb-3 font-semibold">采样参数预设</h2>
-          <div className="mb-4 grid grid-cols-1 gap-2 rounded bg-gray-50 p-3 md:grid-cols-2">
+          <div className="mb-4 grid grid-cols-1 gap-2 rounded bg-muted/50 p-3 md:grid-cols-2">
             <div>
               <label className={labelCls}>预设名 *</label>
               <input
@@ -307,7 +307,7 @@ export default function ProvidersSettingsPage() {
             {presets.map((p) => (
               <li key={p.id} className="flex items-center gap-2">
                 <span className="font-medium">{p.name}</span>
-                <code className="flex-1 truncate text-xs text-gray-500">
+                <code className="flex-1 truncate text-xs text-muted-foreground">
                   {JSON.stringify(p.params)}
                 </code>
                 <button
@@ -331,7 +331,7 @@ export default function ProvidersSettingsPage() {
                 </button>
               </li>
             ))}
-            {presets.length === 0 && <li className="text-gray-400">还没有预设。</li>}
+            {presets.length === 0 && <li className="text-muted-foreground">还没有预设。</li>}
           </ul>
         </section>
 

@@ -68,6 +68,8 @@ export interface Troupe {
   outline: unknown;
   /** 团队基调指令，注入所有生成（§2.2） */
   toneDirective: string | null;
+  /** 题材皮肤 id（modern/parchment…），scene.skin 可单场覆盖 */
+  skin: string;
   defaultPersonaId: string | null;
   /** 团队级模型绑定（§5.5），空则回退全局默认 */
   llmConnectionId: string | null;

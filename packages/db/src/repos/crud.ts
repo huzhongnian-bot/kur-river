@@ -220,6 +220,7 @@ export function createTroupeRepo(db: Database): TroupeRepo {
           name: input.name,
           outline: input.outline ?? null,
           toneDirective: input.toneDirective ?? null,
+          skin: input.skin ?? 'modern',
           defaultPersonaId: input.defaultPersonaId ?? null,
           llmConnectionId: input.llmConnectionId ?? null,
           model: input.model ?? null,

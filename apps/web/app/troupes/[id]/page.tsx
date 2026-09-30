@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { api, body, del, patch } from '@/components/api';
+import { OutlineMap } from '@/components/OutlineMap';
+import { DEFAULT_SKIN, normalizeSkin, SKINS } from '@/components/skin';
 import {
   btnCls,
   btnDangerCls,
@@ -22,6 +24,7 @@ interface Troupe {
   name: string;
   outline: unknown;
   toneDirective: string | null;
+  skin: string;
   defaultPersonaId: string | null;
   memberCharacterIds: string[];
 }
@@ -56,6 +59,9 @@ export default function TroupeDetailPage() {
   const [tone, setTone] = useState('');
   const [outline, setOutline] = useState('');
   const [personaId, setPersonaId] = useState('');
+  const [skin, setSkin] = useState(DEFAULT_SKIN);
+  // 大纲视图：结构化 outline 默认导图，可随时切回 JSON 编辑
+  const [outlineView, setOutlineView] = useState<'map' | 'json'>('map');
 
   // 新建场次
   const [sessionTitle, setSessionTitle] = useState('');
@@ -71,6 +77,7 @@ export default function TroupeDetailPage() {
     setTone(t.toneDirective ?? '');
     setOutline(typeof t.outline === 'string' ? t.outline : t.outline ? JSON.stringify(t.outline, null, 2) : '');
     setPersonaId(t.defaultPersonaId ?? '');
+    setSkin(normalizeSkin(t.skin));
     const [cs, ps, ss] = await Promise.all([
       api<Character[]>(`/api/worlds/${t.worldId}/characters`),
       api<Persona[]>(`/api/worlds/${t.worldId}/personas`),
@@ -91,6 +98,7 @@ export default function TroupeDetailPage() {
     await api(`/api/troupes/${troupeId}`, patch({
       toneDirective: tone || null,
       outline: outline || null,
+      skin,
       defaultPersonaId: personaId || null,
     }));
     await load();
@@ -129,7 +137,7 @@ export default function TroupeDetailPage() {
     return (
       <PageShell title="团队" nav={<Link href="/worlds">← 世界书列表</Link>}>
         <ErrorBanner error={error} />
-        <p className="text-sm text-gray-500">加载中…</p>
+        <p className="text-sm text-muted-foreground">加载中…</p>
       </PageShell>
     );
   }
@@ -154,16 +162,37 @@ export default function TroupeDetailPage() {
               <input className={inputCls} value={tone} onChange={(e) => setTone(e.target.value)} />
             </div>
             <div>
-              <label className={labelCls}>剧目大纲</label>
-              <textarea
-                className={inputCls}
-                rows={4}
-                value={outline}
-                onChange={(e) => setOutline(e.target.value)}
-              />
+              <div className="mb-1 flex items-center justify-between">
+                <label className="block text-xs font-medium text-muted-foreground">剧目大纲</label>
+                <div className="flex gap-1 text-xs">
+                  {(['map', 'json'] as const).map((v) => (
+                    <button
+                      key={v}
+                      className={`rounded px-2 py-0.5 ${
+                        outlineView === v
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:bg-muted'
+                      }`}
+                      onClick={() => setOutlineView(v)}
+                    >
+                      {v === 'map' ? '导图' : 'JSON'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {outlineView === 'map' ? (
+                <OutlineMap outline={outline} onChange={setOutline} />
+              ) : (
+                <textarea
+                  className={inputCls}
+                  rows={4}
+                  value={outline}
+                  onChange={(e) => setOutline(e.target.value)}
+                />
+              )}
             </div>
-            <div className="flex items-end gap-2">
-              <div className="flex-1">
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="min-w-40 flex-1">
                 <label className={labelCls}>默认化身（{'{{user}}'} 宏来源）</label>
                 <select
                   className={inputCls}
@@ -174,6 +203,20 @@ export default function TroupeDetailPage() {
                   {personas.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="min-w-40 flex-1">
+                <label className={labelCls}>题材皮肤（进入场次时生效）</label>
+                <select
+                  className={inputCls}
+                  value={skin}
+                  onChange={(e) => setSkin(e.target.value)}
+                >
+                  {SKINS.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} — {s.description}
                     </option>
                   ))}
                 </select>
@@ -214,13 +257,13 @@ export default function TroupeDetailPage() {
                 </button>
               </li>
             ))}
-            {members.length === 0 && <li className="text-gray-400">还没有成员。</li>}
+            {members.length === 0 && <li className="text-muted-foreground">还没有成员。</li>}
           </ul>
         </section>
 
         <section className={cardCls}>
           <h2 className="mb-3 font-semibold">场次（{sessions.length}）</h2>
-          <div className="mb-3 space-y-2 rounded bg-gray-50 p-3">
+          <div className="mb-3 space-y-2 rounded bg-muted/50 p-3">
             <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
               <input
                 className={inputCls}
@@ -236,7 +279,7 @@ export default function TroupeDetailPage() {
               />
             </div>
             <div className="flex flex-wrap items-center gap-3 text-sm">
-              <span className="text-xs text-gray-500">在场成员：</span>
+              <span className="text-xs text-muted-foreground">在场成员：</span>
               {members.map((c) => (
                 <label key={c.id} className="flex items-center gap-1">
                   <input
@@ -254,7 +297,7 @@ export default function TroupeDetailPage() {
                   {c.name}
                 </label>
               ))}
-              {members.length === 0 && <span className="text-xs text-gray-400">先加成员</span>}
+              {members.length === 0 && <span className="text-xs text-muted-foreground">先加成员</span>}
               <span className="flex-1" />
               <button
                 className={btnCls}
@@ -268,18 +311,18 @@ export default function TroupeDetailPage() {
           <ul className="space-y-1 text-sm">
             {sessions.map((s) => (
               <li key={s.id} className="flex items-center gap-2">
-                <Link href={`/sessions/${s.id}`} className="font-medium text-blue-600 hover:underline">
+                <Link href={`/sessions/${s.id}`} className="font-medium text-primary hover:underline">
                   {s.title || '（无标题场次）'}
                 </Link>
-                <span className="rounded bg-gray-100 px-1.5 text-xs">{s.status}</span>
-                <span className="text-xs text-gray-400">{new Date(s.createdAt).toLocaleString()}</span>
+                <span className="rounded bg-muted px-1.5 text-xs">{s.status}</span>
+                <span className="text-xs text-muted-foreground">{new Date(s.createdAt).toLocaleString()}</span>
                 <span className="flex-1" />
                 <button className={btnDangerCls} onClick={() => run(() => removeSession(s.id))}>
                   删除
                 </button>
               </li>
             ))}
-            {sessions.length === 0 && <li className="text-gray-400">还没有场次。</li>}
+            {sessions.length === 0 && <li className="text-muted-foreground">还没有场次。</li>}
           </ul>
         </section>
       </div>

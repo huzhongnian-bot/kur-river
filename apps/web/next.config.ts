@@ -15,6 +15,8 @@ for (const name of ['.env.local', '.env']) {
 
 const nextConfig: NextConfig = {
   transpilePackages: ['@kur-river/core', '@kur-river/llm', '@kur-river/db'],
+  // dev 悬浮指示器（左下 N 按钮）会压住演出页的移动端底部发言栏，关掉
+  devIndicators: false,
 };
 
 export default nextConfig;

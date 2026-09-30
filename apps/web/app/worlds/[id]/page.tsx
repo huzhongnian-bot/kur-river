@@ -177,7 +177,7 @@ function CharactersSection({
         </button>
       </div>
       {showForm && (
-        <div className="mb-4 space-y-2 rounded bg-gray-50 p-3">
+        <div className="mb-4 space-y-2 rounded bg-muted/50 p-3">
           <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
             <div>
               <label className={labelCls}>角色名 *</label>
@@ -229,9 +229,9 @@ function CharactersSection({
       )}
       <ul className="space-y-1 text-sm">
         {characters.map((c) => (
-          <li key={c.id} className="flex items-center gap-2 rounded px-2 py-1 hover:bg-gray-50">
+          <li key={c.id} className="flex items-center gap-2 rounded px-2 py-1 hover:bg-muted">
             <span className="font-medium">{c.name}</span>
-            <span className="text-xs text-gray-400">talkativeness {c.talkativeness}</span>
+            <span className="text-xs text-muted-foreground">talkativeness {c.talkativeness}</span>
             <span className="flex-1" />
             <button className={btnGhostCls} onClick={() => edit(c)}>
               编辑
@@ -336,7 +336,7 @@ function PersonasSection({
         {personas.map((p) => (
           <li key={p.id} className="flex items-center gap-2">
             <span className="font-medium">{p.name}</span>
-            <span className="flex-1 truncate text-gray-500">{p.description}</span>
+            <span className="flex-1 truncate text-muted-foreground">{p.description}</span>
             <button
               className={btnGhostCls}
               onClick={() => {
@@ -475,7 +475,7 @@ function LorebookSection({
         </button>
       </div>
       {showForm && (
-        <div className="mb-4 space-y-2 rounded bg-gray-50 p-3">
+        <div className="mb-4 space-y-2 rounded bg-muted/50 p-3">
           <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
             <div>
               <label className={labelCls}>scope</label>
@@ -613,14 +613,14 @@ function LorebookSection({
       )}
       <ul className="space-y-1 text-sm">
         {entries.map((e) => (
-          <li key={e.id} className="rounded border border-gray-100 px-2 py-1.5">
+          <li key={e.id} className="rounded border border-border px-2 py-1.5">
             <div className="flex items-center gap-2">
-              <span className="rounded bg-gray-100 px-1.5 text-xs">
+              <span className="rounded bg-muted px-1.5 text-xs">
                 {e.ownerType === 'world' ? 'world' : `角色:${charName(e.ownerId)}`}
               </span>
-              <span className="rounded bg-gray-100 px-1.5 text-xs">{e.visibility}</span>
-              <span className="rounded bg-gray-100 px-1.5 text-xs">{e.position}</span>
-              <span className="text-xs text-gray-500">keys: {e.keys.join(', ') || '（无）'}</span>
+              <span className="rounded bg-muted px-1.5 text-xs">{e.visibility}</span>
+              <span className="rounded bg-muted px-1.5 text-xs">{e.position}</span>
+              <span className="text-xs text-muted-foreground">keys: {e.keys.join(', ') || '（无）'}</span>
               <span className="flex-1" />
               <button className={btnGhostCls} onClick={() => void toggle(e)}>
                 {e.enabled ? '停用' : '启用'}
@@ -633,7 +633,7 @@ function LorebookSection({
               </button>
             </div>
             <p
-              className={`mt-1 whitespace-pre-wrap text-xs ${e.enabled ? 'text-gray-600' : 'text-gray-400 line-through'}`}
+              className={`mt-1 whitespace-pre-wrap text-xs ${e.enabled ? 'text-muted-foreground' : 'text-muted-foreground line-through'}`}
             >
               {e.content}
             </p>
@@ -722,10 +722,10 @@ function TroupesSection({
       <ul className="space-y-1 text-sm">
         {troupes.map((t) => (
           <li key={t.id} className="flex items-center gap-2">
-            <Link href={`/troupes/${t.id}`} className="font-medium text-blue-600 hover:underline">
+            <Link href={`/troupes/${t.id}`} className="font-medium text-primary hover:underline">
               {t.name}
             </Link>
-            <span className="flex-1 truncate text-gray-500">{t.toneDirective}</span>
+            <span className="flex-1 truncate text-muted-foreground">{t.toneDirective}</span>
             <button className={btnDangerCls} onClick={() => void remove(t.id)}>
               删除
             </button>
@@ -747,6 +747,8 @@ export default function WorldDetailPage() {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // 稳定引用：子区块的 useCallback/useEffect 依赖它，inline lambda 会造成请求死循环
+  const handleError = useCallback((e: string) => setError(e), []);
 
   useEffect(() => {
     void (async () => {
@@ -765,14 +767,10 @@ export default function WorldDetailPage() {
     >
       <ErrorBanner error={error} />
       <div className="space-y-4">
-        <CharactersSection
-          worldId={worldId}
-          onError={(e) => setError(e)}
-          onChanged={setCharacters}
-        />
-        <PersonasSection worldId={worldId} onError={(e) => setError(e)} onChanged={setPersonas} />
-        <LorebookSection worldId={worldId} characters={characters} onError={(e) => setError(e)} />
-        <TroupesSection worldId={worldId} personas={personas} onError={(e) => setError(e)} />
+        <CharactersSection worldId={worldId} onError={handleError} onChanged={setCharacters} />
+        <PersonasSection worldId={worldId} onError={handleError} onChanged={setPersonas} />
+        <LorebookSection worldId={worldId} characters={characters} onError={handleError} />
+        <TroupesSection worldId={worldId} personas={personas} onError={handleError} />
       </div>
     </PageShell>
   );

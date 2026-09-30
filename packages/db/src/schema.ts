@@ -76,6 +76,8 @@ export const troupes = pgTable('troupes', {
   outline: jsonb('outline'),
   // 团队基调指令，注入所有生成
   toneDirective: text('tone_directive'),
+  // 题材皮肤（modern/parchment…，登记表见 web components/skin.tsx），scene.skin 可单场覆盖
+  skin: text('skin').notNull().default('modern'),
   defaultPersonaId: uuid('default_persona_id').references(() => personas.id),
   // 团队级模型绑定（§5.5），空则回退全局默认
   llmConnectionId: uuid('llm_connection_id').references(() => llmConnections.id),

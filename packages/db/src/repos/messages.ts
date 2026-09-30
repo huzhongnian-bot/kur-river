@@ -138,6 +138,12 @@ export function createMessageRepo(db: Database): MessageRepo {
       return row ? toMessage(row) : null;
     },
 
+    // 删除单条消息；seq 不重排
+    async remove(id) {
+      const rows = await db.delete(messages).where(eq(messages.id, id)).returning({ id: messages.id });
+      return rows.length > 0;
+    },
+
     // §7.1 M3 截断重演：删除 seq 之后的全部消息
     async truncateAfter(sessionId, seq) {
       const rows = await db

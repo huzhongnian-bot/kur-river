@@ -59,6 +59,7 @@ export interface NewTroupe {
   name: string;
   outline?: unknown;
   toneDirective?: string | null;
+  skin?: string;
   defaultPersonaId?: string | null;
   llmConnectionId?: string | null;
   model?: string | null;
@@ -241,6 +242,8 @@ export interface MessageRepo {
   ): Promise<number>;
   /** 编辑已落盘消息（§7.1 M3）：整体替换段落内容；可见性快照不变 */
   update(id: string, patch: { content: MessageSegment[] }): Promise<Message | null>;
+  /** 删除单条消息：返回是否删除成功；seq 不重排（序号即历史，允许空洞） */
+  remove(id: string): Promise<boolean>;
   /** 截断重演（§7.1 M3）：删除场次内 seq 大于指定值的全部消息，返回删除条数 */
   truncateAfter(sessionId: string, seq: number): Promise<number>;
 }
